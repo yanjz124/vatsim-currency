@@ -135,7 +135,8 @@ export default function App() {
   const loadMember = useCallback(
     async (cid: string, signal?: AbortSignal) => {
       try {
-        setMember(await fetchMemberInfo({ cid, mode: settings.fetchMode, proxyUrl: settings.proxyUrl, signal, onStatus: setStatus }));
+        const info = await fetchMemberInfo({ cid, mode: settings.fetchMode, proxyUrl: settings.proxyUrl, signal, onStatus: setStatus });
+        if (!signal?.aborted) setMember(info);
       } catch {
         // Division and VATUSA details are optional; the report works without them.
       }
@@ -158,22 +159,29 @@ export default function App() {
       else url.searchParams.set('q', quarterKey);
       window.history.replaceState(null, '', url);
 
-      const since = previous.start;
-      const [cached, cachedMember] = await Promise.all([getCachedSessions(cid), getCachedMember(cid)]);
-      setMember(cachedMember ?? null);
-
-      if (settings.fetchMode === 'manual') {
-        abortRef.current?.abort();
-        setData(cached ?? null);
-        setFromCache(!!cached);
-        setManualFor(!cached || !coversSince(cached, since) || opts.force ? cid : null);
-        void loadMember(cid);
-        return;
-      }
-
+      // A new query supersedes any still running, and a different member's report must not stay on
+      // screen while this one loads.
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
+      setData((d) => (d?.cid === cid ? d : null));
+      setMember((m) => (m?.cid === cid ? m : null));
+
+      const since = previous.start;
+      const [cached, cachedMember] = await Promise.all([getCachedSessions(cid), getCachedMember(cid)]);
+      if (ac.signal.aborted) return;
+      if (cachedMember) setMember(cachedMember);
+
+      if (settings.fetchMode === 'manual') {
+        setBusy(false);
+        setStatus(null);
+        setData(cached ?? null);
+        setFromCache(!!cached);
+        setManualFor(!cached || !coversSince(cached, since) || opts.force ? cid : null);
+        void loadMember(cid, ac.signal);
+        return;
+      }
+
       setBusy(true);
       setManualFor(null);
       try {
@@ -186,12 +194,13 @@ export default function App() {
           signal: ac.signal,
           onStatus: setStatus,
         });
+        if (ac.signal.aborted) return;
         setData(r.set);
         setFromCache(r.fromCache);
         await loadMember(cid, ac.signal);
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError('network', (e as Error).message);
-        if (err.kind !== 'aborted') {
+        if (err.kind !== 'aborted' && !ac.signal.aborted) {
           if (cached) {
             setData(cached);
             setFromCache(true);

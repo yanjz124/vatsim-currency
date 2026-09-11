@@ -63,7 +63,7 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
   2. the member's VATUSA home facility
   3. their VATSIM subdivision, then division, if a facility with that code is defined (such as `PRC`)
   4. the facility with the most hours
-- **Listed facilities**: facilities with hours, plus the home facility, VATUSA visiting facilities, facilities marked "Always list", and facilities with their own requirement, even with no hours.
+- **Listed facilities**: facilities with hours, plus the home facility, VATUSA visiting facilities and facilities marked "Always list", even with no hours. A facility's own requirement applies to every member, but doesn't make it appear for members with no hours there.
 - **Position requirements**: rules with callsign patterns, optional required hours per quarter, and a "Counts toward facility" switch. A rule with hours gets its own currency check. Hours from a rule that doesn't count toward the facility are left out of that facility's requirement, but still count toward total hours and the 50% + 1 rule.
 - **50% + 1**: met when home hours are more than half of all counted hours in the quarter across the network. Exactly 50% does not meet it. The report shows how many more home hours are needed, or how many can still be controlled elsewhere.
 

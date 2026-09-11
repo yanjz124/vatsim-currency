@@ -207,7 +207,7 @@ export interface FacilityStat {
   share: number;
   isHome: boolean;
   isVisiting: boolean;
-  /** Listed even without hours: home, visiting, "always list", or has its own requirement. */
+  /** Listed even without hours: home, visiting, or marked "always list". */
   tracked: boolean;
 }
 
@@ -363,13 +363,10 @@ export function buildReport(
   const home = ctx.home || '';
   const visiting = new Set(ctx.visiting ?? []);
   const defined = new Map(settings.facilities.map((f) => [f.code, f]));
+  // Requirements are global per facility, so they don't force a listing; otherwise a facility
+  // configured while looking at one member would show up for every member.
   const tracked = new Set(
-    [
-      home,
-      ...visiting,
-      ...settings.facilities.filter((f) => f.alwaysShow).map((f) => f.code),
-      ...Object.keys(settings.requirements),
-    ].filter((c) => c && c !== UNKNOWN),
+    [home, ...visiting, ...settings.facilities.filter((f) => f.alwaysShow).map((f) => f.code)].filter((c) => c && c !== UNKNOWN),
   );
 
   const facilities = new Map<string, FacilityStat>();

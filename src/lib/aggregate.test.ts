@@ -205,7 +205,7 @@ describe('buildReport', () => {
     expect(r.facilities[1].isHome).toBe(true);
   });
 
-  it('lists home, visiting, always-listed and required facilities even without hours', () => {
+  it('lists home, visiting and always-listed facilities even without hours, but not ones that only have a requirement', () => {
     const r = buildReport(
       sessions,
       q3,
@@ -216,7 +216,8 @@ describe('buildReport', () => {
     expect(r.facilities.find((f) => f.code === 'ZOB')).toMatchObject({ hours: 0, name: 'Cleveland', tracked: true, meets: false, shortBy: 3 });
     expect(r.facilities.find((f) => f.code === 'KZNY')).toMatchObject({ hours: 0, isHome: true, tracked: true });
     expect(r.facilities.find((f) => f.code === 'KZTL')).toMatchObject({ hours: 0, isVisiting: true, tracked: true });
-    expect(r.facilities.find((f) => f.code === 'KZLA')).toMatchObject({ hours: 0, requirement: 2, shortBy: 2 });
+    expect(r.facilities.find((f) => f.code === 'KZLA')).toBeUndefined();
+    expect(r.facilities.find((f) => f.code === 'EGTT')).toMatchObject({ requirement: 4, tracked: false });
     expect(r.facilities.find((f) => f.code === 'HIDDEN')).toBeUndefined();
   });
 
