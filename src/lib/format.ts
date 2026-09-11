@@ -9,6 +9,8 @@ export const hm = (h: number) => {
 
 export const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 export const utc = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + 'Z';
 
 export const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);

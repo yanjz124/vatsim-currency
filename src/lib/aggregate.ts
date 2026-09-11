@@ -1,4 +1,5 @@
-import { ALL_SUFFIXES, requirementFor, type OverrideRule, type Settings } from './settings';
+import { compileCodePattern, compilePattern, isValidCodePattern, isValidPattern, type CompiledPattern } from './patterns';
+import { ALL_SUFFIXES, requirementFor, type PositionRule, type Settings } from './settings';
 import { facilityName, type VatspyData } from './vatspy';
 import { overlapHours, type Quarter } from './quarters';
 import type { Session } from './vatsimApi';
@@ -32,7 +33,7 @@ export interface ParsedCallsign {
 export function parseCallsign(callsign: string): ParsedCallsign | null {
   const parts = callsign.toUpperCase().trim().split('_');
   if (parts.length < 2 || !parts[0]) return null;
-  return { callsign: callsign.toUpperCase(), segments: parts.slice(0, -1), suffix: parts[parts.length - 1] };
+  return { callsign: callsign.toUpperCase().trim(), segments: parts.slice(0, -1), suffix: parts[parts.length - 1] };
 }
 
 /** Candidate prefixes, longest first: LON_S_CTR → ["LON_S", "LON"]. */
@@ -45,7 +46,7 @@ export function prefixCandidates(segments: string[]): string[] {
   return out;
 }
 
-export type ResolutionSource = 'override' | 'fir' | 'airport' | 'lid' | 'inferred' | 'unknown';
+export type ResolutionSource = 'custom' | 'fir' | 'airport' | 'lid' | 'inferred' | 'unknown';
 
 export interface Resolution {
   facility: string;
@@ -54,34 +55,62 @@ export interface Resolution {
   detail: string;
   /** Other facilities the prefix could belong to (ambiguous LIDs). */
   alternatives?: string[];
-  /** Set when a facility-merge override renamed the auto-detected facility. */
-  mergedFrom?: string;
+  /** Set when a user-defined facility includes the matched facility. */
+  groupedFrom?: string;
 }
 
 /** One-line explanation of a match, shared by the report and the spreadsheet. */
 export function describeResolution(r: Resolution): string {
   let s = r.detail;
-  if (r.mergedFrom) s += ` (merged into ${r.facility})`;
+  if (r.groupedFrom) s += ` (part of ${r.facility})`;
   if (r.alternatives) s += `; also listed under ${r.alternatives.join(', ')}`;
   return s;
 }
 
-export function resolveFacility(parsed: ParsedCallsign, vatspy: VatspyData | null, overrides: OverrideRule[]): Resolution {
-  const candidates = prefixCandidates(parsed.segments);
-  const res = autoResolve(parsed, candidates, vatspy, overrides);
-  return applyFacilityRules(res, overrides);
+export interface FacilityMatcher extends CompiledPattern {
+  facility: string;
 }
 
-function autoResolve(
-  parsed: ParsedCallsign,
-  candidates: string[],
-  vatspy: VatspyData | null,
-  overrides: OverrideRule[],
-): Resolution {
-  for (const c of candidates) {
-    const rule = overrides.find((o) => o.kind === 'prefix' && o.match === c);
-    if (rule) return { facility: rule.facility, source: 'override', detail: `Override for prefix ${c}` };
-  }
+export interface MatchRules {
+  /** Callsign patterns, most specific first, then settings order. */
+  callsigns: FacilityMatcher[];
+  /** Included facility codes, most specific first, then settings order. */
+  includes: FacilityMatcher[];
+}
+
+export function compileRules(s: Pick<Settings, 'facilities'>): MatchRules {
+  const callsigns: (FacilityMatcher & { order: number })[] = [];
+  const includes: (FacilityMatcher & { order: number })[] = [];
+  s.facilities.forEach((f, fi) => {
+    if (!f.code) return;
+    f.patterns.forEach((p, pi) => {
+      if (isValidPattern(p)) callsigns.push({ ...compilePattern(p), facility: f.code, order: fi * 1000 + pi });
+    });
+    f.includes.forEach((p, pi) => {
+      if (isValidCodePattern(p)) includes.push({ ...compileCodePattern(p), facility: f.code, order: fi * 1000 + pi });
+    });
+  });
+  const bySpecificity = (a: { specificity: number; order: number }, b: { specificity: number; order: number }) =>
+    b.specificity - a.specificity || a.order - b.order;
+  return { callsigns: callsigns.sort(bySpecificity), includes: includes.sort(bySpecificity) };
+}
+
+/** The user-defined facility that includes `code`, or `code` itself. */
+export function groupFacility(code: string, rules: MatchRules): string {
+  if (code === UNKNOWN) return code;
+  return rules.includes.find((m) => m.facility !== code && m.re.test(code))?.facility ?? code;
+}
+
+export function resolveFacility(parsed: ParsedCallsign, vatspy: VatspyData | null, rules: MatchRules): Resolution {
+  const hit = rules.callsigns.find((m) => m.re.test(parsed.callsign));
+  const res: Resolution = hit
+    ? { facility: hit.facility, source: 'custom', detail: `Pattern ${hit.pattern}` }
+    : autoResolve(parsed, prefixCandidates(parsed.segments), vatspy);
+  const group = groupFacility(res.facility, rules);
+  return group === res.facility ? res : { ...res, facility: group, groupedFrom: res.facility };
+}
+
+function autoResolve(parsed: ParsedCallsign, candidates: string[], vatspy: VatspyData | null): Resolution {
   if (!vatspy) return { facility: UNKNOWN, source: 'unknown', detail: 'VATSpy data not loaded' };
 
   const first = candidates[candidates.length - 1];
@@ -127,18 +156,6 @@ function autoResolve(
   return { facility: UNKNOWN, source: 'unknown', detail: 'No match in VATSpy data' };
 }
 
-function applyFacilityRules(res: Resolution, overrides: OverrideRule[]): Resolution {
-  let facility = res.facility;
-  const seen = new Set([facility]);
-  for (let i = 0; i < 5; i++) {
-    const rule = overrides.find((o) => o.kind === 'facility' && o.match === facility);
-    if (!rule || seen.has(rule.facility)) break;
-    facility = rule.facility;
-    seen.add(facility);
-  }
-  return facility === res.facility ? res : { ...res, facility, mergedFrom: res.facility };
-}
-
 // ---------------------------------------------------------------------------
 // Quarter report
 // ---------------------------------------------------------------------------
@@ -152,6 +169,9 @@ export interface SessionDetail {
   resolution: Resolution | null;
   /** Hours attributed to the quarter. */
   hours: number;
+  /** Position rules the callsign matches. */
+  positionRules: string[];
+  countsTowardFacility: boolean;
 }
 
 export interface PositionStat {
@@ -163,6 +183,10 @@ export interface PositionStat {
   sessions: number;
   resolution: Resolution;
   segments: string[];
+  /** Position rules the callsign matches. */
+  positionRules: string[];
+  /** False when a matching position rule leaves it out of facility currency. */
+  countsTowardFacility: boolean;
 }
 
 export type LevelHours = Record<Level, number>;
@@ -171,6 +195,8 @@ export interface FacilityStat {
   code: string;
   name: string;
   hours: number;
+  /** Hours that count toward the facility requirement (position rules can leave some out). */
+  currencyHours: number;
   levels: LevelHours;
   sessions: number;
   positions: PositionStat[];
@@ -180,6 +206,9 @@ export interface FacilityStat {
   /** Share of the member's total counted hours (0..1). */
   share: number;
   isHome: boolean;
+  isVisiting: boolean;
+  /** Listed even without hours: home, visiting, "always list", or has its own requirement. */
+  tracked: boolean;
 }
 
 export interface HomeStatus {
@@ -212,7 +241,28 @@ export interface QuarterReport {
   positions: PositionStat[];
   excluded: ExcludedStat[];
   home: HomeStatus | null;
+  positionRules: PositionRuleStat[];
   details: SessionDetail[];
+}
+
+export interface PositionRuleStat {
+  rule: PositionRule;
+  hours: number;
+  sessions: number;
+  callsigns: string[];
+  hasRequirement: boolean;
+  /** True when the rule has no requirement of its own. */
+  meets: boolean;
+  shortBy: number;
+}
+
+export const ruleLabel = (r: PositionRule) => r.name || r.patterns.join(', ') || 'Unnamed rule';
+
+/** Member-specific context for a report. */
+export interface ReportContext {
+  home?: string | null;
+  /** Facilities the member is on the visiting roster of. */
+  visiting?: string[];
 }
 
 export const emptyLevels = (): LevelHours => ({ 'CTR/FSS': 0, 'APP/DEP': 0, TWR: 0, 'GND/DEL/RMP': 0, Other: 0 });
@@ -222,12 +272,26 @@ export function hoursInQuarter(s: Session, q: Quarter, mode: Settings['boundaryM
   return overlapHours(s.start, s.end, q.start, q.end);
 }
 
-export function buildReport(sessions: Session[], quarter: Quarter, vatspy: VatspyData | null, settings: Settings): QuarterReport {
+export function buildReport(
+  sessions: Session[],
+  quarter: Quarter,
+  vatspy: VatspyData | null,
+  settings: Settings,
+  ctx: ReportContext = {},
+): QuarterReport {
   const counted = new Set(settings.countedSuffixes);
+  const rules = compileRules(settings);
   const details: SessionDetail[] = [];
   const positions = new Map<string, PositionStat>();
   const excluded = new Map<string, ExcludedStat>();
   const resolutionCache = new Map<string, Resolution>();
+
+  const positionRules = settings.positionRules.map((rule) => ({
+    rule,
+    res: rule.patterns.filter(isValidPattern).map((p) => compilePattern(p).re),
+    stat: { rule, hours: 0, sessions: 0, callsigns: [], hasRequirement: rule.hours != null, meets: true, shortBy: 0 } as PositionRuleStat,
+  }));
+  const ruleCache = new Map<string, typeof positionRules>();
 
   for (const s of sessions) {
     const hours = hoursInQuarter(s, quarter, settings.boundaryMode);
@@ -240,7 +304,17 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
     else if (!counted.has(suffix)) reason = `${suffix} not counted (Settings)`;
 
     if (reason || !parsed) {
-      details.push({ session: s, suffix, level: null, counted: false, excludedReason: reason, resolution: null, hours });
+      details.push({
+        session: s,
+        suffix,
+        level: null,
+        counted: false,
+        excludedReason: reason,
+        resolution: null,
+        hours,
+        positionRules: [],
+        countsTowardFacility: false,
+      });
       const ex = excluded.get(s.callsign) ?? { callsign: s.callsign, reason: reason!, hours: 0, sessions: 0 };
       ex.hours += hours;
       ex.sessions++;
@@ -250,11 +324,24 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
 
     let resolution = resolutionCache.get(s.callsign);
     if (!resolution) {
-      resolution = resolveFacility(parsed, vatspy, settings.overrides);
+      resolution = resolveFacility(parsed, vatspy, rules);
       resolutionCache.set(s.callsign, resolution);
     }
+    let matched = ruleCache.get(s.callsign);
+    if (!matched) {
+      matched = positionRules.filter((p) => p.res.some((re) => re.test(s.callsign)));
+      ruleCache.set(s.callsign, matched);
+    }
+    for (const { stat } of matched) {
+      stat.hours += hours;
+      stat.sessions++;
+      if (!stat.callsigns.includes(s.callsign)) stat.callsigns.push(s.callsign);
+    }
+    const ruleNames = matched.map((p) => ruleLabel(p.rule));
+    const countsTowardFacility = matched.every((p) => p.rule.countsTowardFacility);
+
     const level = SUFFIX_LEVEL[suffix];
-    details.push({ session: s, suffix, level, counted: true, resolution, hours });
+    details.push({ session: s, suffix, level, counted: true, resolution, hours, positionRules: ruleNames, countsTowardFacility });
 
     const pos = positions.get(s.callsign) ?? {
       callsign: s.callsign,
@@ -265,11 +352,25 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
       sessions: 0,
       resolution,
       segments: parsed.segments,
+      positionRules: ruleNames,
+      countsTowardFacility,
     };
     pos.hours += hours;
     pos.sessions++;
     positions.set(s.callsign, pos);
   }
+
+  const home = ctx.home || '';
+  const visiting = new Set(ctx.visiting ?? []);
+  const defined = new Map(settings.facilities.map((f) => [f.code, f]));
+  const tracked = new Set(
+    [
+      home,
+      ...visiting,
+      ...settings.facilities.filter((f) => f.alwaysShow).map((f) => f.code),
+      ...Object.keys(settings.requirements),
+    ].filter((c) => c && c !== UNKNOWN),
+  );
 
   const facilities = new Map<string, FacilityStat>();
   const ensureFacility = (code: string): FacilityStat => {
@@ -277,8 +378,9 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
     if (!f) {
       f = {
         code,
-        name: code === UNKNOWN ? 'Unrecognised callsigns' : facilityName(code, vatspy),
+        name: code === UNKNOWN ? 'Unrecognised callsigns' : defined.get(code)?.name || facilityName(code, vatspy),
         hours: 0,
+        currencyHours: 0,
         levels: emptyLevels(),
         sessions: 0,
         positions: [],
@@ -286,7 +388,9 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
         meets: false,
         shortBy: 0,
         share: 0,
-        isHome: code === settings.homeFacility,
+        isHome: code === home,
+        isVisiting: visiting.has(code),
+        tracked: tracked.has(code),
       };
       facilities.set(code, f);
     }
@@ -299,6 +403,7 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
   for (const p of positions.values()) {
     const f = ensureFacility(p.facility);
     f.hours += p.hours;
+    if (p.countsTowardFacility) f.currencyHours += p.hours;
     f.levels[p.level] += p.hours;
     f.sessions += p.sessions;
     f.positions.push(p);
@@ -306,23 +411,27 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
     total += p.hours;
     sessionCount += p.sessions;
   }
-  if (settings.homeFacility) ensureFacility(settings.homeFacility);
+  for (const code of tracked) ensureFacility(code);
 
   for (const f of facilities.values()) {
     f.positions.sort((a, b) => b.hours - a.hours);
-    f.meets = f.hours >= f.requirement - 1e-9;
-    f.shortBy = Math.max(0, f.requirement - f.hours);
+    f.meets = f.currencyHours >= f.requirement - 1e-9;
+    f.shortBy = Math.max(0, f.requirement - f.currencyHours);
     f.share = total > 0 ? f.hours / total : 0;
   }
 
   const facilityList = [...facilities.values()].sort(
-    (a, b) => Number(b.isHome) - Number(a.isHome) || Number(a.code === UNKNOWN) - Number(b.code === UNKNOWN) || b.hours - a.hours,
+    (a, b) =>
+      Number(a.code === UNKNOWN) - Number(b.code === UNKNOWN) ||
+      b.hours - a.hours ||
+      Number(b.isHome) - Number(a.isHome) ||
+      a.code.localeCompare(b.code),
   );
 
-  let home: HomeStatus | null = null;
-  if (settings.homeFacility) {
-    const hf = facilities.get(settings.homeFacility)!;
-    home = {
+  let homeStatus: HomeStatus | null = null;
+  if (home) {
+    const hf = facilities.get(home)!;
+    homeStatus = {
       facility: hf.code,
       name: hf.name,
       homeHours: hf.hours,
@@ -334,15 +443,22 @@ export function buildReport(sessions: Session[], quarter: Quarter, vatspy: Vatsp
     };
   }
 
+  for (const { rule, stat } of positionRules) {
+    if (rule.hours == null) continue;
+    stat.meets = stat.hours >= rule.hours - 1e-9;
+    stat.shortBy = Math.max(0, rule.hours - stat.hours);
+  }
+
   return {
     quarter,
+    positionRules: positionRules.map((p) => p.stat),
     total,
     sessionCount,
     levels,
     facilities: facilityList,
     positions: [...positions.values()].sort((a, b) => b.hours - a.hours),
     excluded: [...excluded.values()].sort((a, b) => b.hours - a.hours),
-    home,
+    home: homeStatus,
     details: details.sort((a, b) => b.session.start - a.session.start),
   };
 }

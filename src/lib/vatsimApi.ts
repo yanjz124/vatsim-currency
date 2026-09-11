@@ -114,11 +114,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function guardedGet(
+/** GET a VATSIM API URL as JSON under the rate-limit guard. `label` describes it in status messages. */
+export async function guardedGetJson(
   url: string,
   mode: FetchMode,
   onStatus: (s: FetchStatus) => void,
-  page: number,
+  label: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
@@ -128,13 +129,13 @@ async function guardedGet(
       throw new ApiError('rate-limited', 'The VATSIM API asked us to slow down. Try again later.', at);
     }
     if (at > now) {
-      onStatus({ phase: 'waiting', page, until: at, message: 'Pacing requests to stay under the VATSIM API rate limit' });
+      onStatus({ phase: 'waiting', until: at, message: 'Pacing requests to stay under the VATSIM API rate limit' });
       await sleep(at - now, signal);
     }
 
     now = Date.now();
     recordRequest(now);
-    onStatus({ phase: 'fetching', page, message: `Fetching sessions (page ${page})` });
+    onStatus({ phase: 'fetching', message: `Fetching ${label}` });
 
     let res: Response;
     try {
@@ -157,7 +158,7 @@ async function guardedGet(
       if (attempt >= GUARD.maxRetries || retryAt - Date.now() > GUARD.maxAutoWaitMs) {
         throw new ApiError('rate-limited', 'Rate limited by the VATSIM API.', retryAt);
       }
-      onStatus({ phase: 'rate-limited', page, until: retryAt, message: 'Rate limited by the VATSIM API — waiting before retrying' });
+      onStatus({ phase: 'rate-limited', until: retryAt, message: 'Rate limited by the VATSIM API, waiting before retrying' });
       continue;
     }
     if (res.status >= 500 && attempt < 2) {
@@ -323,7 +324,7 @@ export async function fetchSessions(opts: FetchOptions): Promise<FetchResult> {
   let coveredSince = since;
   let requests = 0;
   for (let page = 1, offset = 0; ; page++, offset += PAGE_SIZE) {
-    const json = await guardedGet(memberAtcUrl(base, cid, PAGE_SIZE, offset), mode, onStatus, page, signal);
+    const json = await guardedGetJson(memberAtcUrl(base, cid, PAGE_SIZE, offset), mode, onStatus, `sessions (page ${page})`, signal);
     requests++;
     const parsed = parseSessionsJson(json);
     collected = mergeSessions(collected, parsed.sessions);

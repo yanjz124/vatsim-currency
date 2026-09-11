@@ -1,84 +1,107 @@
 # VATSIM ATC Currency
 
-A static website for checking a VATSIM controller's quarterly currency. Enter a CID and it shows:
+A static website for checking a VATSIM controller's quarterly currency. **Live:** https://yanjz124.github.io/vatsim-currency/
+
+Enter a CID and it shows:
 
 - counted controlling hours for the selected quarter and the one before it
-- hours by facility (FIR/ARTCC/ACC), with a breakdown by level: CTR/FSS, APP/DEP, TWR, GND/DEL/RMP, Other (RDO/TMU/FMP)
+- hours by facility (FIR/ARTCC/ACC or a facility you define), sorted by hours, with a breakdown by level: CTR/FSS, APP/DEP, TWR, GND/DEL/RMP, Other (RDO/TMU/FMP)
 - each callsign used, its hours, and how it was matched to a facility
 - whether each facility's currency requirement is met (3 h/quarter by default, adjustable per facility)
-- the 50% + 1 check against a chosen home facility
+- separate requirements for specific positions, and positions left out of a facility's currency
+- the 50% + 1 check against the member's home facility, taken from VATUSA or the VATSIM division when possible
 - an `.xlsx` export with the query and calculation timestamps
 
-Everything is calculated in the browser. Settings, facility overrides and fetched sessions are stored on the user's device (localStorage and IndexedDB). There is no backend.
+All calculation happens in the browser. Settings, fetched sessions and member details are stored on the user's device (localStorage and IndexedDB).
 
-Based on the logic in `zdc_roster_audit/individual_activity.py`.
+## Data sources
 
-## Getting session data
+| Source | Used for | How the browser reaches it |
+| --- | --- | --- |
+| VATSIM API `/v2/members/{cid}/atc` | ATC sessions | Proxy, manual import, or direct (see below) |
+| VATSIM API `/v2/members/{cid}` | Division and subdivision | Proxy or direct; skipped in manual import mode |
+| VATUSA API `/v2/user/{cid}` | Home and visiting facilities of VATUSA members | Directly, since it sends CORS headers. Only asked when the division is USA or unknown. Visits outside VATUSA aren't listed. |
+| [VATSpy Data Project](https://github.com/vatsimnetwork/vatspy-data-project) | FIRs, airports, callsign prefixes, countries | Directly from GitHub, cached for 24 h |
 
-The VATSIM API (`api.vatsim.net/v2/members/{cid}/atc`) does not send CORS headers, so browsers block web pages from reading it. The site supports three ways around that (Settings → Data source):
+The VATSIM API does not send CORS headers, so browsers block web pages from reading it. There are three ways around that (Settings → Data source):
 
 | Mode | How it works | Requests come from |
 | --- | --- | --- |
-| **Manual import** (default when no proxy is configured) | The site links to the API URL. The user opens it, copies the JSON and pastes it back. Longer histories take more than one page; the site says when another page is needed. | The user's browser |
-| **Proxy** | The site fetches through the Cloudflare Worker in [`worker/`](worker/), which relays that one endpoint and adds CORS headers. | Cloudflare |
+| **Proxy** (default on the live site) | Requests go through the Cloudflare Worker in [`worker/`](worker/), which relays only the two member endpoints and adds CORS headers. | Cloudflare |
+| **Manual import** (default when no proxy is configured) | The site links to the API URL. The user opens it, copies the JSON and pastes it back, adding more pages if the site asks for them. | The user's browser |
 | **Direct** | Fetches `api.vatsim.net` directly. Only works if VATSIM enables CORS. | The user's browser |
 
 ### Rate limiting
 
-The VATSIM API rate-limits aggressively. The fetch code in [`src/lib/vatsimApi.ts`](src/lib/vatsimApi.ts):
+The VATSIM API rate-limits aggressively. [`src/lib/vatsimApi.ts`](src/lib/vatsimApi.ts):
 
 - spaces requests at least 2 s apart, with at most 8 per rolling minute, shared across open tabs through localStorage
 - pages 250 sessions at a time and stops once it has gone past the start of the previous quarter
-- reuses fetched data for 15 minutes; after that, a refresh only fetches sessions newer than the saved copy
+- reuses fetched sessions for 15 minutes, then fetches only newer sessions on refresh
 - allows one manual refresh per CID every 2 minutes
 - on HTTP 429, pauses every request until `Retry-After` (or an exponential backoff), retries automatically if the wait is under 90 s, and otherwise shows a countdown
 
-The Worker also caches each response at the edge for 2 minutes.
+Member details are cached for 12 hours. The Worker caches responses at the edge for 2 minutes.
 
 ## How hours are counted
 
 - **Counted positions**: callsigns ending in `CTR FSS APP DEP TWR GND DEL RMP RDO TMU FMP`, each of which can be switched off in Settings. OBS, ATIS, SUP and similar are listed under "Not counted".
-- **Quarter boundaries**: calendar quarters in UTC. By default a session that crosses a boundary is split, so each quarter gets the part that falls inside it. Settings can instead count the whole session in the quarter it started, which is what `roster_audit.py` does.
-- **Facility matching** uses [VATSpy.dat](https://github.com/vatsimnetwork/vatspy-data-project), downloaded from GitHub and cached for 24 h. For a callsign such as `DC_32_CTR`, the first rule that matches wins:
-  1. A user **prefix override**, longest prefix first (`LON_S` before `LON`)
-  2. For CTR/FSS: a FIR callsign prefix or FIR code from `[FIRs]`, or a UIR code. Other positions check airports first.
+- **Quarter boundaries**: calendar quarters in UTC. By default a session that crosses a boundary is split, so each quarter gets the part inside it. Alternatively, the whole session can count in the quarter it started, as in `roster_audit.py`.
+- **Facility matching**: for a callsign such as `DC_32_CTR`, the first rule that matches wins:
+  1. A **callsign pattern** on a facility defined in Settings. `*` matches anything (`DC_*`, `IAD_*_TWR`, `*_FSS`). A pattern without `*` matches that prefix (`PCT` covers `PCT_APP`) or the exact callsign. If several match, the one with the most literal characters wins, then the one listed first.
+  2. For CTR/FSS: a FIR callsign prefix or FIR code from VATSpy's `[FIRs]`, or a UIR code. Other positions check airports first.
   3. A 4-letter airport ICAO from `[Airports]`, mapped to its FIR
-  4. An IATA/LID or pseudo-airport prefix from `[Airports]` (e.g. `PCT`, `DCA`, `ESSEX`). If a code belongs to more than one FIR, the others are shown as alternatives.
+  4. An IATA/LID or pseudo-airport prefix (`PCT`, `DCA`, `ESSEX`). If a code belongs to more than one FIR, the others are shown as alternatives.
   5. For CTR/FSS, an airport match. For other positions, a FIR prefix.
   6. A guess for 3-letter codes: `K` + code (or `C` + code when it starts with `Y`), shown as "Guessed airport"
   7. Otherwise `UNKNOWN`
 
-  Afterwards, **merge overrides** rename the facility, for example `EGPX → EGTT` or `KZDC → ZDC`. Clicking **Reassign** on a position row creates a prefix override.
-- **50% + 1**: met when home hours are more than half of all counted hours in the quarter, across the whole network. Exactly 50% does not meet it. The report also shows how many more home hours are needed, or how many hours can still be controlled elsewhere.
+  The result is then folded into any defined facility that **includes** it. Includes are facility codes, exact unless they contain `*`: `EGPX`, `KZDC`, `ZB*`. Settings can fill includes from a whole VATSpy country. **Reassign** on a position row adds a callsign pattern to a facility, creating the facility if needed. Settings also has a box for testing a callsign.
+- **VATPRC** ships as one facility (code `PRC`) that includes every prefix VATSpy lists for China. It can be edited or removed.
+- **Home facility**, chosen per CID in this order:
+  1. the user's own pick for that CID, made in the report's Home column
+  2. the member's VATUSA home facility
+  3. their VATSIM subdivision, then division, if a facility with that code is defined (such as `PRC`)
+  4. the facility with the most hours
+- **Listed facilities**: facilities with hours, plus the home facility, VATUSA visiting facilities, facilities marked "Always list", and facilities with their own requirement, even with no hours.
+- **Position requirements**: rules with callsign patterns, optional required hours per quarter, and a "Counts toward facility" switch. A rule with hours gets its own currency check. Hours from a rule that doesn't count toward the facility are left out of that facility's requirement, but still count toward total hours and the 50% + 1 rule.
+- **50% + 1**: met when home hours are more than half of all counted hours in the quarter across the network. Exactly 50% does not meet it. The report shows how many more home hours are needed, or how many can still be controlled elsewhere.
+
+## Settings backup
+
+Settings save automatically in the browser. Under Settings → Back up and restore:
+
+- **Export settings** downloads a `.json` backup, including the home-facility pick for each CID.
+- **Import settings** restores from that file, or from any `.xlsx` report exported by this version, which carries the same backup on its Settings sheet.
+- **Copy settings link** puts the facilities, rules and requirements into a link (`#settings=…`, compressed). Opening it asks before replacing the current settings. Per-CID home picks are not included.
 
 ## Spreadsheet export
 
 `vatsim-atc-currency_<cid>_<YYYY-MM-DD>_<HHMM>Z.xlsx`, with these sheets:
 
-- **Summary**: CID, data query time, calculation time and export time (all UTC), data source, VATSpy load time, the settings used, and a totals row per quarter
-- **Facilities**: one row per quarter and facility, with level breakdown, share, requirement, status and home flag
-- **Positions**: one row per quarter and callsign, with facility, level, sessions, hours and match reason
-- **Sessions**: one row per session, with real Excel date-times in UTC, full duration, hours inside the quarter, and why a session wasn't counted. Filters are enabled, so it can go straight into a pivot table.
-- **Settings**: the overrides and custom requirements in effect
+- **Summary**: CID, data query time, calculation time and export time (UTC), data source, VATSpy load time, division/subdivision, VATUSA facilities, the home facility and where it came from, the settings used, and totals per quarter
+- **Facilities**: per quarter and facility, with hours, currency hours, level breakdown, share, requirement, status, home and visiting flags
+- **Positions**: per quarter and callsign, with facility, level, sessions, hours, match reason and position rules
+- **Position requirements**: per quarter and rule, when any rules exist
+- **Sessions**: one row per session, with real Excel date-times in UTC, hours inside the quarter, and why a session wasn't counted. Filters are enabled for pivot tables.
+- **Settings**: facilities, position rules, requirements, and the restorable JSON backup
 
 ## Stack
 
 - [Vite](https://vite.dev) + React + TypeScript, built to a static bundle
 - [Primer CSS](https://primer.style/css), GitHub's design system, for buttons, form controls, typography and utilities. Its design tokens (`@primer/primitives`) provide the light and dark themes, which follow the OS setting. The tables, tabs and notices in `src/styles.css` are built from the same tokens.
-- [SheetJS](https://sheetjs.com) for the `.xlsx` export, loaded only when exporting
+- [SheetJS](https://sheetjs.com) for `.xlsx` export and import, loaded only when needed
 
 ## Development
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests (facility matching, aggregation, rate-limit guard)
+npm test           # unit tests
 npm run build      # static site in dist/
 ```
 
-`dist/` can be served from any static host: GitHub Pages, Cloudflare Pages, Netlify or a plain folder. Asset paths are relative.
-
-To make proxy mode the default for everyone, build with the Worker URL:
+To make proxy mode the default, build with the Worker URL:
 
 ```bash
 VITE_PROXY_URL=https://vatsim-currency-proxy.<account>.workers.dev npm run build
@@ -86,7 +109,7 @@ VITE_PROXY_URL=https://vatsim-currency-proxy.<account>.workers.dev npm run build
 
 ### Deployment
 
-**Site:** [`.github/workflows/pages.yml`](.github/workflows/pages.yml) runs the tests, builds, and publishes to GitHub Pages on every push to `main`. It builds with the repository variable `VITE_PROXY_URL` (Settings → Secrets and variables → Actions → Variables), so the live site defaults to proxy mode.
+**Site:** [`.github/workflows/pages.yml`](.github/workflows/pages.yml) runs the tests, builds, and publishes to GitHub Pages on every push to `main`. It builds with the repository variable `VITE_PROXY_URL` (Settings → Secrets and variables → Actions → Variables).
 
 **Proxy:**
 

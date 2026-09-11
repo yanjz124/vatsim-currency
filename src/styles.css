@@ -324,6 +324,15 @@ details > summary {
   display: inline-block;
   margin-top: 0;
 }
+.settings-body .panel.block {
+  display: block;
+}
+.settings-body table.data.wide {
+  width: 100%;
+}
+.settings-label p:last-child {
+  margin-bottom: 0;
+}
 .settings-body .form-checkbox {
   margin: var(--base-size-8) 0;
 }

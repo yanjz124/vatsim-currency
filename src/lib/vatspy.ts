@@ -5,7 +5,7 @@ export const VATSPY_URL =
 export const VATSPY_RELEASES_API =
   'https://api.github.com/repos/vatsimnetwork/vatspy-data-project/releases/latest';
 
-const CACHE_KEY = 'vatspy:v1';
+const CACHE_KEY = 'vatspy:v2';
 const CACHE_TTL_MS = 24 * 3600_000;
 
 export interface LidEntry {
@@ -28,6 +28,8 @@ export interface VatspyData {
   airportNames: Record<string, string>;
   /** IATA/LID/pseudo callsign prefix → candidate airports (pseudo entries first). */
   lids: Record<string, LidEntry[]>;
+  /** Country name → ICAO prefixes, e.g. China → [ZB, ZG, …]. */
+  countries: Record<string, string[]>;
 }
 
 /**
@@ -45,6 +47,7 @@ export function parseVatspy(text: string, fetchedAt = Date.now()): VatspyData {
     airportFir: {},
     airportNames: {},
     lids: {},
+    countries: {},
   };
   let section = '';
   for (const raw of text.split(/\r?\n/)) {
@@ -55,7 +58,14 @@ export function parseVatspy(text: string, fetchedAt = Date.now()): VatspyData {
       continue;
     }
     const p = line.split('|').map((s) => s.trim());
-    if (section === '[AIRPORTS]' && p.length >= 7) {
+    if (section === '[COUNTRIES]' && p.length >= 2) {
+      const [name, prefixRaw] = p;
+      const prefix = prefixRaw.toUpperCase();
+      if (name && /^[A-Z0-9]{1,4}$/.test(prefix)) {
+        const list = (data.countries[name] ??= []);
+        if (!list.includes(prefix)) list.push(prefix);
+      }
+    } else if (section === '[AIRPORTS]' && p.length >= 7) {
       const [icaoRaw, name, , , lidRaw, firRaw, pseudoRaw] = p;
       const icao = icaoRaw.toUpperCase();
       const fir = firRaw.toUpperCase();

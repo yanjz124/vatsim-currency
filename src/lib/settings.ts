@@ -1,30 +1,46 @@
+import { isValidCodePattern, isValidPattern, normalizePattern } from './patterns';
 import { local } from './storage';
 
 export type FetchMode = 'proxy' | 'direct' | 'manual';
 export type BoundaryMode = 'split' | 'start';
 
-export interface OverrideRule {
+/** A user-defined facility. */
+export interface FacilityDef {
   id: string;
-  /**
-   * prefix:   callsign prefix (e.g. "PCT", "LON_S") → facility. Longest match wins.
-   * facility: resolved facility code (e.g. "EGPX") → another facility (merge/rename).
-   */
-  kind: 'prefix' | 'facility';
-  match: string;
-  facility: string;
+  /** Use a VATSIM division/subdivision ID (PRC, GER) to make it that division's default home facility. */
+  code: string;
+  name: string;
+  /** Callsign patterns that belong to this facility (see patterns.ts). */
+  patterns: string[];
+  /** Facility codes folded into this one, e.g. EGPX, KZDC or ZB*. */
+  includes: string[];
+  /** List in every report, even without hours. */
+  alwaysShow: boolean;
+}
+
+/** A group of positions tracked on its own. */
+export interface PositionRule {
+  id: string;
+  name: string;
+  /** Callsign patterns (see patterns.ts). */
+  patterns: string[];
+  /** Separate requirement in hours per quarter; null for none. */
+  hours: number | null;
+  /** When false, matching sessions don't count toward their facility's currency (they still count toward totals). */
+  countsTowardFacility: boolean;
 }
 
 export interface Settings {
-  version: 1;
-  homeFacility: string;
+  version: 2;
   defaultRequirement: number;
   /** Facility code → required hours per quarter. */
   requirements: Record<string, number>;
-  overrides: OverrideRule[];
+  facilities: FacilityDef[];
+  positionRules: PositionRule[];
   countedSuffixes: string[];
   boundaryMode: BoundaryMode;
   fetchMode: FetchMode;
-  /** Base URL of a CORS relay exposing /v2/members/{cid}/atc. */
+  /** Base URL of a CORS relay exposing /v2/members/{cid} and /v2/members/{cid}/atc. */
   proxyUrl: string;
 }
 
@@ -32,12 +48,27 @@ export const ALL_SUFFIXES = ['CTR', 'FSS', 'APP', 'DEP', 'TWR', 'GND', 'DEL', 'R
 
 export const DEFAULT_PROXY_URL: string = import.meta.env?.VITE_PROXY_URL ?? '';
 
+/**
+ * VATPRC runs mainland China as a single facility. Its code matches the VATSIM division ID, and the
+ * prefixes are the ones VATSpy lists for China.
+ */
+export const DEFAULT_FACILITIES: FacilityDef[] = [
+  {
+    id: 'vatprc',
+    code: 'PRC',
+    name: 'VATPRC (China)',
+    patterns: [],
+    includes: ['ZB*', 'ZG*', 'ZH*', 'ZJ*', 'ZL*', 'ZP*', 'ZS*', 'ZU*', 'ZW*', 'ZY*'],
+    alwaysShow: false,
+  },
+];
+
 export const DEFAULT_SETTINGS: Settings = {
-  version: 1,
-  homeFacility: '',
+  version: 2,
   defaultRequirement: 3,
   requirements: {},
-  overrides: [],
+  facilities: DEFAULT_FACILITIES,
+  positionRules: [],
   countedSuffixes: [...ALL_SUFFIXES],
   boundaryMode: 'split',
   fetchMode: DEFAULT_PROXY_URL ? 'proxy' : 'manual',
@@ -46,28 +77,76 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'settings:v1';
 
+const toCode = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase() : '');
+
+const cleanList = (v: unknown, valid: (p: string) => boolean) => [
+  ...new Set((Array.isArray(v) ? v : []).map((p) => normalizePattern(String(p))).filter(valid)),
+];
+
+/** Version 1 kept callsign-prefix rules and facility merges in a single list. */
+interface LegacyOverride {
+  kind?: string;
+  match?: string;
+  facility?: string;
+}
+
 export function normalizeSettings(raw: unknown): Settings {
-  const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<Settings>;
+  const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<Settings> & { overrides?: LegacyOverride[] };
   const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d);
+
+  const facilities: FacilityDef[] = [];
+  const source = (Array.isArray(s.facilities) ? s.facilities : DEFAULT_FACILITIES) as Partial<FacilityDef>[];
+  for (const f of source) {
+    const code = toCode(f?.code);
+    if (!code || facilities.some((x) => x.code === code)) continue;
+    facilities.push({
+      id: typeof f.id === 'string' && f.id ? f.id : newId(),
+      code,
+      name: typeof f.name === 'string' ? f.name.trim() : '',
+      patterns: cleanList(f.patterns, isValidPattern),
+      includes: cleanList(f.includes, isValidCodePattern).filter((p) => p !== code),
+      alwaysShow: f.alwaysShow === true,
+    });
+  }
+
+  const facilityFor = (code: string) => {
+    let f = facilities.find((x) => x.code === code);
+    if (!f) facilities.push((f = { id: newId(), code, name: '', patterns: [], includes: [], alwaysShow: false }));
+    return f;
+  };
+  for (const o of Array.isArray(s.overrides) ? s.overrides : []) {
+    const match = toCode(o?.match);
+    const target = toCode(o?.facility);
+    if (!match || !target || match === target) continue;
+    if (o.kind === 'prefix' && isValidPattern(`${match}_*`)) {
+      const f = facilityFor(target);
+      if (!f.patterns.includes(`${match}_*`)) f.patterns.push(`${match}_*`);
+    } else if (o.kind === 'facility' && isValidCodePattern(match)) {
+      const f = facilityFor(target);
+      if (!f.includes.includes(match)) f.includes.push(match);
+    }
+  }
+
+  const positionRules: PositionRule[] = (Array.isArray(s.positionRules) ? (s.positionRules as Partial<PositionRule>[]) : [])
+    .map((r) => ({
+      id: typeof r?.id === 'string' && r.id ? r.id : newId(),
+      name: typeof r?.name === 'string' ? r.name.trim() : '',
+      patterns: cleanList(r?.patterns, isValidPattern),
+      hours: typeof r?.hours === 'number' && Number.isFinite(r.hours) && r.hours >= 0 ? r.hours : null,
+      countsTowardFacility: r?.countsTowardFacility !== false,
+    }))
+    .filter((r) => r.name || r.patterns.length);
+
   return {
-    version: 1,
-    homeFacility: typeof s.homeFacility === 'string' ? s.homeFacility.trim().toUpperCase() : '',
+    version: 2,
     defaultRequirement: num(s.defaultRequirement, DEFAULT_SETTINGS.defaultRequirement),
     requirements: Object.fromEntries(
       Object.entries(s.requirements ?? {})
         .filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
         .map(([k, v]) => [k.toUpperCase(), v]),
     ),
-    overrides: Array.isArray(s.overrides)
-      ? s.overrides
-          .filter((o) => o && (o.kind === 'prefix' || o.kind === 'facility') && o.match && o.facility)
-          .map((o) => ({
-            id: o.id || newId(),
-            kind: o.kind,
-            match: String(o.match).trim().toUpperCase(),
-            facility: String(o.facility).trim().toUpperCase(),
-          }))
-      : [],
+    facilities,
+    positionRules,
     countedSuffixes: Array.isArray(s.countedSuffixes)
       ? s.countedSuffixes.filter((x) => (ALL_SUFFIXES as readonly string[]).includes(x))
       : [...ALL_SUFFIXES],
@@ -78,7 +157,7 @@ export function normalizeSettings(raw: unknown): Settings {
 }
 
 export function loadSettings(): Settings {
-  const stored = local.get<Settings>(KEY);
+  const stored = local.get<unknown>(KEY);
   return stored ? normalizeSettings(stored) : DEFAULT_SETTINGS;
 }
 
@@ -88,6 +167,26 @@ export function saveSettings(s: Settings): void {
 
 export function requirementFor(s: Settings, facility: string): number {
   return s.requirements[facility] ?? s.defaultRequirement;
+}
+
+/** Move a callsign pattern to a facility (removing it from any other), creating the facility if needed. */
+export function assignPattern(s: Settings, pattern: string, code: string): Settings {
+  const facilities = s.facilities.map((f) => ({ ...f, patterns: f.patterns.filter((p) => p !== pattern) }));
+  const target = facilities.find((f) => f.code === code);
+  if (target) target.patterns.push(pattern);
+  else facilities.push({ id: newId(), code, name: '', patterns: [pattern], includes: [], alwaysShow: false });
+  return { ...s, facilities };
+}
+
+/** Replace a facility definition; a renamed code keeps its requirement. */
+export function updateFacility(s: Settings, next: FacilityDef): Settings {
+  const prev = s.facilities.find((f) => f.id === next.id);
+  let { requirements } = s;
+  if (prev && prev.code !== next.code && prev.code in requirements && !(next.code in requirements)) {
+    requirements = { ...requirements, [next.code]: requirements[prev.code] };
+    delete requirements[prev.code];
+  }
+  return { ...s, requirements, facilities: s.facilities.map((f) => (f.id === next.id ? next : f)) };
 }
 
 export function newId(): string {

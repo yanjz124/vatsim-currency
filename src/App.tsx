@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildReport } from './lib/aggregate';
+import { UNKNOWN, buildReport } from './lib/aggregate';
+import { decodeSettingsLink } from './lib/backup';
 import { exportWorkbook } from './lib/export';
 import * as fmt from './lib/format';
-import { quarterFromKey, recentQuarters, shiftQuarter } from './lib/quarters';
-import { loadSettings, newId, saveSettings, type Settings } from './lib/settings';
+import { fetchMemberInfo, getCachedMember, memberFacilities, type HomeFacility, type MemberInfo } from './lib/member';
+import { quarterFromKey, recentQuarters, shiftQuarter, type Quarter } from './lib/quarters';
+import { assignPattern, loadSettings, saveSettings, type Settings } from './lib/settings';
 import { clearStore, local } from './lib/storage';
 import {
   ApiError,
@@ -28,10 +30,21 @@ const SOURCE_TEXT: Record<Settings['fetchMode'], string> = {
   direct: 'direct API',
 };
 
+/** Home facility picked by the user, per CID. */
+const HOME_KEY = 'home:v1';
+
 interface ErrorState {
   message: string;
   retryAt?: number;
   offerManual?: boolean;
+}
+
+function memberSummary(m: MemberInfo | null): string {
+  if (!m) return '';
+  const parts: string[] = [];
+  if (m.vatsim?.division) parts.push(`Division ${m.vatsim.division}${m.vatsim.subdivision ? ` / ${m.vatsim.subdivision}` : ''}`);
+  if (m.vatusa) parts.push(`VATUSA ${m.vatusa.facility}${m.vatusa.visiting.length ? `, visiting ${m.vatusa.visiting.join(', ')}` : ''}`);
+  return parts.join(' · ');
 }
 
 export default function App() {
@@ -68,14 +81,67 @@ export default function App() {
   const previous = useMemo(() => shiftQuarter(focus, -1), [focus]);
 
   const [data, setData] = useState<SessionSet | null>(null);
+  const [member, setMember] = useState<MemberInfo | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<FetchStatus | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
   const [manualFor, setManualFor] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [homeChoices, setHomeChoices] = useState<Record<string, string>>(() => local.get<Record<string, string>>(HOME_KEY) ?? {});
   const abortRef = useRef<AbortController | null>(null);
   const now = fmt.useNow(1000);
+
+  const chooseHome = useCallback((cid: string, code: string | null) => {
+    setHomeChoices((prev) => {
+      const next = { ...prev };
+      if (code) next[cid] = code;
+      else delete next[cid];
+      local.set(HOME_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const restore = useCallback(
+    (next: Settings, choices: Record<string, string> | null) => {
+      updateSettings(() => next);
+      if (choices) {
+        local.set(HOME_KEY, choices);
+        setHomeChoices(choices);
+      }
+    },
+    [updateSettings],
+  );
+
+  // Settings shared as a link (#settings=…): ask before replacing the current ones.
+  const linkHandled = useRef(false);
+  useEffect(() => {
+    const m = /[#&]settings=([^&]+)/.exec(window.location.hash);
+    if (!m || linkHandled.current) return;
+    linkHandled.current = true;
+    const url = new URL(window.location.href);
+    url.hash = '';
+    window.history.replaceState(null, '', url);
+    void decodeSettingsLink(m[1]).then((shared) => {
+      if (!shared) return setError({ message: "That settings link couldn't be read. It may be incomplete." });
+      const summary = `${fmt.plural(shared.facilities.length, 'facility', 'facilities')}, ${fmt.plural(shared.positionRules.length, 'position rule')}`;
+      if (window.confirm(`Use the settings from this link (${summary})? They replace your current settings.`)) {
+        restore(shared, null);
+        setView('settings');
+      }
+    });
+  }, [restore]);
+
+  const loadMember = useCallback(
+    async (cid: string, signal?: AbortSignal) => {
+      try {
+        setMember(await fetchMemberInfo({ cid, mode: settings.fetchMode, proxyUrl: settings.proxyUrl, signal, onStatus: setStatus }));
+      } catch {
+        // Division and VATUSA details are optional; the report works without them.
+      }
+    },
+    [settings.fetchMode, settings.proxyUrl],
+  );
 
   const check = useCallback(
     async (opts: { force?: boolean } = {}) => {
@@ -93,13 +159,15 @@ export default function App() {
       window.history.replaceState(null, '', url);
 
       const since = previous.start;
-      const cached = await getCachedSessions(cid);
+      const [cached, cachedMember] = await Promise.all([getCachedSessions(cid), getCachedMember(cid)]);
+      setMember(cachedMember ?? null);
 
       if (settings.fetchMode === 'manual') {
         abortRef.current?.abort();
         setData(cached ?? null);
         setFromCache(!!cached);
         setManualFor(!cached || !coversSince(cached, since) || opts.force ? cid : null);
+        void loadMember(cid);
         return;
       }
 
@@ -120,6 +188,7 @@ export default function App() {
         });
         setData(r.set);
         setFromCache(r.fromCache);
+        await loadMember(cid, ac.signal);
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError('network', (e as Error).message);
         if (err.kind !== 'aborted') {
@@ -140,7 +209,7 @@ export default function App() {
         }
       }
     },
-    [cidInput, previous, quarterKey, quarters, settings.fetchMode, settings.proxyUrl],
+    [cidInput, previous, quarterKey, quarters, settings.fetchMode, settings.proxyUrl, loadMember],
   );
 
   // Open straight into a report when the page is loaded with ?cid=
@@ -154,19 +223,49 @@ export default function App() {
 
   const computed = useMemo(() => {
     if (!data) return null;
+    const info = member?.cid === data.cid ? member : null;
+    const fromMember = memberFacilities(info, vatspy, settings);
+    const busiest = (q: Quarter) =>
+      buildReport(data.sessions, q, vatspy, settings).facilities.find((f) => f.code !== UNKNOWN && f.hours > 0)?.code;
+
+    const choice = homeChoices[data.cid];
+    let home: HomeFacility | null = choice ? { code: choice, source: 'choice' } : fromMember.home;
+    if (!home) {
+      const code = busiest(focus) ?? busiest(previous);
+      if (code) home = { code, source: 'hours' };
+    }
+    const ctx = { home: home?.code ?? null, visiting: fromMember.visiting };
     return {
-      reports: [buildReport(data.sessions, focus, vatspy, settings), buildReport(data.sessions, previous, vatspy, settings)],
+      reports: [buildReport(data.sessions, focus, vatspy, settings, ctx), buildReport(data.sessions, previous, vatspy, settings, ctx)],
+      home,
+      member: info,
       at: Date.now(),
     };
-  }, [data, focus, previous, vatspy, settings]);
+  }, [data, member, focus, previous, vatspy, settings, homeChoices]);
 
-  const codes = useMemo(() => facilityCodes(vatspy), [vatspy]);
+  const codes = useMemo(
+    () =>
+      [...new Set([...settings.facilities.map((f) => f.code), ...facilityCodes(vatspy)])]
+        .sort()
+        .map((code) => ({ code, name: settings.facilities.find((f) => f.code === code)?.name || facilityName(code, vatspy) })),
+    [vatspy, settings.facilities],
+  );
 
   const onExport = async () => {
     if (!data || !computed) return;
     setExporting(true);
     try {
-      await exportWorkbook({ cid: data.cid, data, reports: computed.reports, settings, vatspy, calculatedAt: computed.at });
+      await exportWorkbook({
+        cid: data.cid,
+        data,
+        reports: computed.reports,
+        settings,
+        homeChoices,
+        vatspy,
+        member: computed.member,
+        home: computed.home,
+        calculatedAt: computed.at,
+      });
     } catch (e) {
       setError({ message: `Export failed: ${(e as Error).message}` });
     } finally {
@@ -183,6 +282,7 @@ export default function App() {
 
   const refreshAt = data && settings.fetchMode !== 'manual' ? refreshAvailableAt(data) : 0;
   const incomplete = data && !coversSince(data, previous.start);
+  const summary = memberSummary(computed?.member ?? null);
 
   return (
     <div className="app">
@@ -202,12 +302,15 @@ export default function App() {
         <SettingsView
           settings={settings}
           update={updateSettings}
+          homeChoices={homeChoices}
+          onRestore={restore}
           vatspy={vatspy}
           vatspyError={vatspyError}
           onReloadVatspy={() => reloadVatspy(true)}
           onClearCache={async () => {
             await clearStore();
             setData(null);
+            setMember(null);
             reloadVatspy(true);
           }}
         />
@@ -316,6 +419,7 @@ export default function App() {
               <div className="report-head">
                 <div>
                   <h1 className="f3 text-mono">CID {data.cid}</h1>
+                  {summary && <div className="f5">{summary}</div>}
                   <div className="f6 color-fg-muted">
                     Data queried {fmt.utc(data.fetchedAt)} ({fmt.ago(data.fetchedAt, now)}
                     {fromCache ? ', saved copy' : ''}) · calculated {fmt.utc(computed.at)} · {data.sessions.length} sessions loaded
@@ -345,7 +449,9 @@ export default function App() {
                 reports={computed.reports}
                 currentKey={quarters[0].key}
                 requirements={settings.requirements}
-                onSetHome={(code) => updateSettings((s) => ({ ...s, homeFacility: code }))}
+                home={computed.home}
+                onSetHome={(code) => chooseHome(data.cid, code)}
+                onResetHome={() => chooseHome(data.cid, null)}
                 onSetRequirement={(code, h) =>
                   updateSettings((s) => {
                     const requirements = { ...s.requirements };
@@ -354,15 +460,7 @@ export default function App() {
                     return { ...s, requirements };
                   })
                 }
-                onAssign={(prefix, facility) =>
-                  updateSettings((s) => ({
-                    ...s,
-                    overrides: [
-                      ...s.overrides.filter((o) => !(o.kind === 'prefix' && o.match === prefix)),
-                      { id: newId(), kind: 'prefix', match: prefix, facility },
-                    ],
-                  }))
-                }
+                onAssign={(pattern, facility) => updateSettings((s) => assignPattern(s, pattern, facility))}
               />
             </>
           )}
@@ -377,7 +475,7 @@ export default function App() {
       )}
 
       <footer className="footer f6 color-fg-muted">
-        Session data from the VATSIM API. Facility data from the{' '}
+        Session and member data from the VATSIM and VATUSA APIs. Facility data from the{' '}
         <a href="https://github.com/vatsimnetwork/vatspy-data-project" target="_blank" rel="noreferrer">
           VATSpy Data Project
         </a>
@@ -385,13 +483,13 @@ export default function App() {
         <a href="https://primer.style/css" target="_blank" rel="noreferrer">
           Primer CSS
         </a>
-        . Not affiliated with VATSIM.
+        . Not affiliated with VATSIM or VATUSA.
       </footer>
 
       <datalist id="facility-codes">
         {codes.map((c) => (
-          <option key={c} value={c}>
-            {facilityName(c, vatspy)}
+          <option key={c.code} value={c.code}>
+            {c.name}
           </option>
         ))}
       </datalist>

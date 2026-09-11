@@ -4,20 +4,26 @@ import {
   UNKNOWN,
   describeResolution,
   prefixCandidates,
+  ruleLabel,
   type FacilityStat,
   type PositionStat,
   type QuarterReport,
 } from '../lib/aggregate';
 import * as fmt from '../lib/format';
+import { HOME_SOURCE_TEXT, type HomeFacility } from '../lib/member';
 
 interface Props {
   /** [selected quarter, previous quarter] */
   reports: QuarterReport[];
   currentKey: string;
   requirements: Record<string, number>;
+  home: HomeFacility | null;
   onSetHome(code: string): void;
+  /** Drop the user's pick for this CID and go back to the default. */
+  onResetHome(): void;
   onSetRequirement(code: string, hours: number | null): void;
-  onAssign(prefix: string, facility: string): void;
+  /** Add a callsign pattern to a facility (created if needed). */
+  onAssign(pattern: string, facility: string): void;
 }
 
 export function ReportView(props: Props) {
@@ -38,8 +44,9 @@ export function ReportView(props: Props) {
         ))}
       </div>
 
-      <HomeRule report={r} />
+      <HomeRule report={r} home={props.home} onResetHome={props.onResetHome} />
       <Facilities report={r} {...props} />
+      <PositionRequirements report={r} />
       <Positions report={r} onAssign={props.onAssign} />
       <Excluded report={r} />
     </>
@@ -48,7 +55,7 @@ export function ReportView(props: Props) {
 
 function Comparison({ reports, label }: { reports: QuarterReport[]; label: (r: QuarterReport) => string }) {
   const home = reports[0].home;
-  const active = (r: QuarterReport) => r.facilities.filter((f) => f.code !== UNKNOWN && (f.hours > 0 || f.isHome));
+  const listed = (r: QuarterReport) => r.facilities.filter((f) => f.code !== UNKNOWN && (f.hours > 0 || f.tracked));
   return (
     <div className="table-wrap">
       <table className="compare">
@@ -82,7 +89,7 @@ function Comparison({ reports, label }: { reports: QuarterReport[]; label: (r: Q
           <tr>
             <th scope="row">Facilities meeting requirement</th>
             {reports.map((r) => {
-              const a = active(r);
+              const a = listed(r);
               return (
                 <td key={r.quarter.key} className="num">
                   {a.filter((f) => f.meets).length} of {a.length}
@@ -90,6 +97,19 @@ function Comparison({ reports, label }: { reports: QuarterReport[]; label: (r: Q
               );
             })}
           </tr>
+          {reports.some((r) => r.positionRules.some((p) => p.hasRequirement)) && (
+            <tr>
+              <th scope="row">Position requirements met</th>
+              {reports.map((r) => {
+                const required = r.positionRules.filter((p) => p.hasRequirement);
+                return (
+                  <td key={r.quarter.key} className="num">
+                    {required.filter((p) => p.meets).length} of {required.length}
+                  </td>
+                );
+              })}
+            </tr>
+          )}
           {home && (
             <tr>
               <th scope="row">Share at {home.facility} (50% + 1)</th>
@@ -116,14 +136,14 @@ function RuleMark({ meets }: { meets: boolean }) {
   return meets ? <span className="color-fg-success">met</span> : <span className="color-fg-danger">not met</span>;
 }
 
-function HomeRule({ report }: { report: QuarterReport }) {
+function HomeRule({ report, home, onResetHome }: { report: QuarterReport; home: HomeFacility | null; onResetHome(): void }) {
   const h = report.home;
   const q = report.quarter.label;
-  if (!h) {
+  if (!h || !home) {
     return (
       <section>
         <h2 className="section-title">50% + 1 rule</h2>
-        <p className="color-fg-muted">Pick a home facility in the table below, or in Settings, to check it.</p>
+        <p className="color-fg-muted">No home facility found for this member. Pick one in the Home column below.</p>
       </section>
     );
   }
@@ -133,6 +153,16 @@ function HomeRule({ report }: { report: QuarterReport }) {
         50% + 1 rule: {h.facility}
         {h.name && <span className="text-normal color-fg-muted"> {h.name}</span>}
       </h2>
+      <p className="f6 color-fg-muted mb-2">
+        Home facility from {HOME_SOURCE_TEXT[home.source]}.{' '}
+        {home.source === 'choice' ? (
+          <button className="btn-link" onClick={onResetHome}>
+            Use the default
+          </button>
+        ) : (
+          'Pick a different one in the Home column.'
+        )}
+      </p>
       {h.meets === null ? (
         <p className="color-fg-muted">No controlling time in {q}.</p>
       ) : (
@@ -246,6 +276,7 @@ function FacilityRow({
       <td className="facility-cell">
         <span className="code">{f.code}</span>
         {f.name && <span className="color-fg-muted"> {f.name}</span>}
+        {f.isVisiting && <span className="f6 color-fg-muted"> · visiting</span>}
       </td>
       {LEVELS.map((l) => (
         <td key={l} className={f.levels[l] ? 'num' : 'num color-fg-subtle'}>
@@ -254,6 +285,11 @@ function FacilityRow({
       ))}
       <td className="num text-bold" title={`${fmt.hm(f.hours)} h:mm`}>
         {fmt.hours(f.hours)}
+        {Math.abs(f.currencyHours - f.hours) > 1e-9 && (
+          <div className="f6 text-normal color-fg-muted" title="Hours that count toward this facility's requirement">
+            {fmt.hours(f.currencyHours)} counted
+          </div>
+        )}
       </td>
       <td className="num">{fmt.pct(f.share)}</td>
       <td className="num">
@@ -314,6 +350,54 @@ function RequirementInput({ value, custom, onCommit }: { value: number; custom: 
   );
 }
 
+function PositionRequirements({ report }: { report: QuarterReport }) {
+  if (!report.positionRules.length) return null;
+  return (
+    <section>
+      <h2 className="section-title">Position requirements</h2>
+      <div className="panel table-wrap">
+        <table className="data">
+          <thead>
+            <tr>
+              <th>Rule</th>
+              <th>Callsigns</th>
+              <th className="num">Sessions</th>
+              <th className="num">Hours</th>
+              <th className="num">Required</th>
+              <th>Status</th>
+              <th>Facility currency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.positionRules.map((p) => (
+              <tr key={p.rule.id}>
+                <td>
+                  {ruleLabel(p.rule)}
+                  <div className="f6 text-mono color-fg-muted">{p.rule.patterns.join(', ')}</div>
+                </td>
+                <td className="f6 text-mono">{p.callsigns.length ? p.callsigns.join(', ') : <span className="color-fg-subtle">None</span>}</td>
+                <td className="num">{p.sessions}</td>
+                <td className="num text-bold">{fmt.hours(p.hours)}</td>
+                <td className="num">{p.hasRequirement ? fmt.hours(p.rule.hours!) : <span className="color-fg-subtle">–</span>}</td>
+                <td className="no-wrap">
+                  {!p.hasRequirement ? (
+                    <span className="color-fg-subtle">–</span>
+                  ) : p.meets ? (
+                    <span className="color-fg-success">Met</span>
+                  ) : (
+                    <span className="color-fg-danger">{fmt.hours(p.shortBy)} h short</span>
+                  )}
+                </td>
+                <td className="f6 color-fg-muted">{p.rule.countsTowardFacility ? 'Counts' : 'Not counted'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Props['onAssign'] }) {
   const [editing, setEditing] = useState<string | null>(null);
   const groups = report.facilities.filter((f) => f.positions.length);
@@ -358,7 +442,15 @@ function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Prop
                       <td className="num" title={`${fmt.hm(p.hours)} h:mm`}>
                         {fmt.hours(p.hours)}
                       </td>
-                      <td className={`${tone} f6`}>{describeResolution(p.resolution)}</td>
+                      <td className={`${tone} f6`}>
+                        {describeResolution(p.resolution)}
+                        {p.positionRules.length > 0 && (
+                          <div className="color-fg-muted">
+                            {p.positionRules.join(', ')}
+                            {!p.countsTowardFacility && ' · not counted toward facility currency'}
+                          </div>
+                        )}
+                      </td>
                       <td className="text-right">
                         <button className="btn-link f6" onClick={() => setEditing(editing === p.callsign ? null : p.callsign)}>
                           Reassign
@@ -370,8 +462,8 @@ function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Prop
                         <td colSpan={6}>
                           <AssignForm
                             position={p}
-                            onSave={(prefix, facility) => {
-                              onAssign(prefix, facility);
+                            onSave={(pattern, facility) => {
+                              onAssign(pattern, facility);
                               setEditing(null);
                             }}
                             onCancel={() => setEditing(null)}
@@ -396,11 +488,12 @@ function AssignForm({
   onCancel,
 }: {
   position: PositionStat;
-  onSave(prefix: string, facility: string): void;
+  onSave(pattern: string, facility: string): void;
   onCancel(): void;
 }) {
-  const candidates = prefixCandidates(position.segments);
-  const [prefix, setPrefix] = useState(candidates[candidates.length - 1]);
+  // Shortest prefix first (DCA_*), then longer ones (DCA_N_*), then the exact callsign.
+  const options = [...prefixCandidates(position.segments).reverse().map((c) => `${c}_*`), position.callsign];
+  const [pattern, setPattern] = useState(options[0]);
   const [facility, setFacility] = useState(position.facility === UNKNOWN ? '' : position.facility);
   return (
     <form
@@ -408,22 +501,18 @@ function AssignForm({
       onSubmit={(e) => {
         e.preventDefault();
         const code = facility.trim().toUpperCase();
-        if (code) onSave(prefix, code);
+        if (code) onSave(pattern, code);
       }}
     >
-      <span>Callsigns starting with</span>
-      {candidates.length > 1 ? (
-        <select className="form-select input-sm" value={prefix} onChange={(e) => setPrefix(e.target.value)}>
-          {candidates.map((c) => (
-            <option key={c} value={c}>
-              {c}_
-            </option>
-          ))}
-        </select>
-      ) : (
-        <span className="text-mono">{prefix}_</span>
-      )}
-      <span>belong to</span>
+      <span>Assign</span>
+      <select className="form-select input-sm input-monospace" value={pattern} onChange={(e) => setPattern(e.target.value)}>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+      <span>to facility</span>
       <input
         className="form-control input-sm input-monospace"
         list="facility-codes"
@@ -440,7 +529,7 @@ function AssignForm({
       <button type="button" className="btn btn-sm" onClick={onCancel}>
         Cancel
       </button>
-      <span className="f6 color-fg-muted">Saved as an override in Settings.</span>
+      <span className="f6 color-fg-muted">Adds the pattern to that facility in Settings.</span>
     </form>
   );
 }

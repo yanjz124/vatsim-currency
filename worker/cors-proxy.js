@@ -1,4 +1,4 @@
-// Minimal CORS relay for the VATSIM member ATC session endpoint.
+// Minimal CORS relay for the VATSIM member details and ATC session endpoints.
 //
 // The VATSIM API doesn't send CORS headers, so a browser page can't read it.
 // This Worker forwards exactly one endpoint, adds the headers, and caches
@@ -36,13 +36,17 @@ export default {
     if (!allowOrigin) return reply({ error: 'Origin not allowed' }, 403, {});
     if (request.method !== 'GET') return reply({ error: 'Method not allowed' }, 405, cors);
 
+    // Only two endpoints: member details (division/subdivision) and ATC session history.
     const url = new URL(request.url);
-    const m = url.pathname.match(/^\/v2\/members\/(\d{3,10})\/atc\/?$/);
+    const m = url.pathname.match(/^\/v2\/members\/(\d{3,10})(\/atc)?\/?$/);
     if (!m) return reply({ error: 'Not found' }, 404, cors);
 
-    const limit = clampInt(url.searchParams.get('limit'), 1, 1000, 250);
-    const offset = clampInt(url.searchParams.get('offset'), 0, 1_000_000, 0);
-    const upstreamUrl = `${UPSTREAM}/v2/members/${m[1]}/atc?limit=${limit}&offset=${offset}`;
+    let upstreamUrl = `${UPSTREAM}/v2/members/${m[1]}`;
+    if (m[2]) {
+      const limit = clampInt(url.searchParams.get('limit'), 1, 1000, 250);
+      const offset = clampInt(url.searchParams.get('offset'), 0, 1_000_000, 0);
+      upstreamUrl += `/atc?limit=${limit}&offset=${offset}`;
+    }
 
     const cache = caches.default;
     const cacheKey = new Request(upstreamUrl);
