@@ -56,7 +56,7 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
   6. A guess for 3-letter codes: `K` + code (or `C` + code when it starts with `Y`), shown as "Guessed airport"
   7. Otherwise `UNKNOWN`
 
-  The result is then folded into any defined facility that **includes** it. Includes are facility codes, exact unless they contain `*`: `EGPX`, `KZDC`, `ZB*`. Settings can fill includes from a whole VATSpy country. **Reassign** on a position row adds a callsign pattern to a facility, creating the facility if needed. Settings also has a box for testing a callsign.
+  The result is then folded into any defined facility that **includes** it. Includes are facility codes, exact unless they contain `*`: `EGPX`, `KZDC`, `ZB*`. Settings can fill includes from a whole VATSpy country. **Reassign** on a position row moves a callsign pattern (`DCA_*`, the exact callsign) or the whole underlying facility (`all of ZGGG`) to any facility. That can be a new custom code such as `VATSSA`, which gets created with an optional name. **Add a facility** under the By facility table defines one that has no hours yet, with callsign patterns and included codes; it stays listed with 0 hours. Settings also has a box for testing a callsign.
 - **VATPRC** ships as one facility (code `PRC`) that includes every prefix VATSpy lists for China. It can be edited or removed.
 - **Home facility**, chosen per CID in this order:
   1. the user's own pick for that CID, made in the report's Home column

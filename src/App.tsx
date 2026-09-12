@@ -5,7 +5,7 @@ import { exportWorkbook } from './lib/export';
 import * as fmt from './lib/format';
 import { fetchMemberInfo, getCachedMember, memberFacilities, type HomeFacility, type MemberInfo } from './lib/member';
 import { quarterFromKey, recentQuarters, shiftQuarter, type Quarter } from './lib/quarters';
-import { assignPattern, loadSettings, saveSettings, type Settings } from './lib/settings';
+import { addFacility, assignInclude, assignPattern, loadSettings, saveSettings, type Settings } from './lib/settings';
 import { clearStore, local } from './lib/storage';
 import {
   ApiError,
@@ -259,6 +259,10 @@ export default function App() {
         .map((code) => ({ code, name: settings.facilities.find((f) => f.code === code)?.name || facilityName(code, vatspy) })),
     [vatspy, settings.facilities],
   );
+  const codeInfo = useMemo(() => {
+    const names = new Map(codes.map((c) => [c.code, c.name]));
+    return (code: string) => ({ known: names.has(code), name: names.get(code) ?? '' });
+  }, [codes]);
 
   const onExport = async () => {
     if (!data || !computed) return;
@@ -469,7 +473,13 @@ export default function App() {
                     return { ...s, requirements };
                   })
                 }
-                onAssign={(pattern, facility) => updateSettings((s) => assignPattern(s, pattern, facility))}
+                codeInfo={codeInfo}
+                onAssign={(a) =>
+                  updateSettings((s) =>
+                    a.kind === 'pattern' ? assignPattern(s, a.value, a.facility, a.name) : assignInclude(s, a.value, a.facility, a.name),
+                  )
+                }
+                onAddFacility={(f) => updateSettings((s) => addFacility(s, { ...f, alwaysShow: true }))}
               />
             </>
           )}

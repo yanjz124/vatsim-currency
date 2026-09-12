@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from
 import { compileRules, describeResolution, parseCallsign, resolveFacility, ruleLabel } from '../lib/aggregate';
 import { backupFileName, encodeSettingsLink, makeBackup, readBackupFile } from '../lib/backup';
 import * as fmt from '../lib/format';
-import { compilePattern, isValidPattern, parsePatternList } from '../lib/patterns';
+import { compilePattern, isValidFacilityCode, isValidPattern, parsePatternList } from '../lib/patterns';
 import {
   ALL_SUFFIXES,
   DEFAULT_SETTINGS,
@@ -99,9 +99,9 @@ function FacilityEditRow({
 
   const commit = (alwaysShow = def.alwaysShow) => {
     const c = upper(code);
-    if (!c) {
+    if (!isValidFacilityCode(c)) {
       setCode(def.code);
-      return setProblem('A facility needs a code.');
+      return setProblem('Facility codes use letters, digits, - and _, for example KZNY or VATSSA.');
     }
     if (c !== def.code && taken(c)) return setProblem(`${c} is already defined.`);
     const p = parsePatternList(patterns);
@@ -295,7 +295,7 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
 
   const addFacility = () => {
     const code = upper(newFac.code);
-    if (!code) return setFacProblem('Enter a facility code.');
+    if (!isValidFacilityCode(code)) return setFacProblem('Facility codes use letters, digits, - and _, for example KZNY or VATSSA.');
     if (settings.facilities.some((f) => f.code === code)) return setFacProblem(`${code} is already defined. Edit it above.`);
     const p = parsePatternList(newFac.patterns);
     const inc = parsePatternList(newFac.includes, 'code');

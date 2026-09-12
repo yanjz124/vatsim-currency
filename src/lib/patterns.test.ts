@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { compileCodePattern, compilePattern, parsePatternList } from './patterns';
-import { DEFAULT_SETTINGS, assignPattern, normalizeSettings, updateFacility, type Settings } from './settings';
+import { compileCodePattern, compilePattern, isValidFacilityCode, parsePatternList } from './patterns';
+import {
+  DEFAULT_SETTINGS,
+  addFacility,
+  assignInclude,
+  assignPattern,
+  normalizeSettings,
+  updateFacility,
+  type Settings,
+} from './settings';
 
 describe('patterns', () => {
   it('parses comma, space or semicolon separated lists and rejects bad tokens', () => {
@@ -91,6 +99,37 @@ describe('settings', () => {
       ['B', ['DC_*']],
     ]);
     expect(start.facilities[0].patterns).toEqual(['DC_*', 'PCT']); // not mutated
+  });
+
+  it('accepts VATSpy and custom facility codes', () => {
+    expect(['KZDC', 'EGTT-S', 'VATPRC', 'VATSSA', 'ZDC_TRACON'].every(isValidFacilityCode)).toBe(true);
+    expect(['', 'VAT SSA', '-X', 'ZB*', 'A'.repeat(25)].some(isValidFacilityCode)).toBe(false);
+  });
+
+  it('creates a named custom facility when reassigning to a new code', () => {
+    const next = assignPattern(DEFAULT_SETTINGS, 'JNB_*', 'VATSSA', 'VATSSA (Southern Africa)');
+    expect(next.facilities.find((f) => f.code === 'VATSSA')).toMatchObject({ name: 'VATSSA (Southern Africa)', patterns: ['JNB_*'] });
+    // Naming an existing facility doesn't overwrite its name.
+    expect(assignPattern(next, 'CPT_*', 'VATSSA', 'Other').facilities.find((f) => f.code === 'VATSSA')?.name).toBe('VATSSA (Southern Africa)');
+  });
+
+  it('moves a whole facility code between facilities', () => {
+    let s = assignInclude(DEFAULT_SETTINGS, 'ZGGG', 'SOUTH');
+    expect(s.facilities.find((f) => f.code === 'SOUTH')?.includes).toEqual(['ZGGG']);
+    s = assignInclude(s, 'ZGGG', 'PRC');
+    expect(s.facilities.find((f) => f.code === 'SOUTH')?.includes).toEqual([]);
+    expect(s.facilities.find((f) => f.code === 'PRC')?.includes).toContain('ZGGG');
+    expect(assignInclude(s, 'PRC', 'PRC')).toBe(s);
+  });
+
+  it('adds a listed facility, merging into an existing one and taking over its patterns', () => {
+    let s = assignPattern(DEFAULT_SETTINGS, 'NY_*', 'OLD');
+    s = addFacility(s, { code: 'KZNY', name: '', patterns: ['NY_*', 'JFK_*'], includes: ['KZNY-W'], alwaysShow: true });
+    expect(s.facilities.find((f) => f.code === 'KZNY')).toMatchObject({ patterns: ['NY_*', 'JFK_*'], includes: ['KZNY-W'], alwaysShow: true });
+    expect(s.facilities.find((f) => f.code === 'OLD')?.patterns).toEqual([]);
+    s = addFacility(s, { code: 'KZNY', name: 'New York', patterns: ['EWR_*'], includes: [], alwaysShow: false });
+    expect(s.facilities.filter((f) => f.code === 'KZNY')).toHaveLength(1);
+    expect(s.facilities.find((f) => f.code === 'KZNY')).toMatchObject({ name: 'New York', patterns: ['NY_*', 'JFK_*', 'EWR_*'], alwaysShow: true });
   });
 
   it('carries a requirement over when a facility is renamed', () => {

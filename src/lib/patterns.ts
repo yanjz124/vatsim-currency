@@ -24,6 +24,11 @@ export function isValidPattern(p: string): boolean {
   return /^[A-Z0-9_*]+$/.test(p) && /[A-Z0-9]/.test(p);
 }
 
+/** A facility code: a VATSpy code (KZDC, EGTT-S) or any custom one (VATPRC, VATSSA). */
+export function isValidFacilityCode(code: string): boolean {
+  return /^[A-Z0-9][A-Z0-9_-]{0,23}$/.test(code);
+}
+
 /** VATSpy facility codes can also contain `-` (EGTT-S, KZNY-BDA). */
 export function isValidCodePattern(p: string): boolean {
   return /^[A-Z0-9_*-]+$/.test(p) && /[A-Z0-9]/.test(p);

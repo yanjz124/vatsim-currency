@@ -169,13 +169,45 @@ export function requirementFor(s: Settings, facility: string): number {
   return s.requirements[facility] ?? s.defaultRequirement;
 }
 
+const cloneFacilities = (s: Settings) => s.facilities.map((f) => ({ ...f, patterns: [...f.patterns], includes: [...f.includes] }));
+
+/** The facility with `code` in `facilities`, created (and appended) if missing. */
+function targetFacility(facilities: FacilityDef[], code: string, name: string): FacilityDef {
+  let f = facilities.find((x) => x.code === code);
+  if (!f) facilities.push((f = { id: newId(), code, name, patterns: [], includes: [], alwaysShow: false }));
+  else if (!f.name && name) f.name = name;
+  return f;
+}
+
 /** Move a callsign pattern to a facility (removing it from any other), creating the facility if needed. */
-export function assignPattern(s: Settings, pattern: string, code: string): Settings {
-  const facilities = s.facilities.map((f) => ({ ...f, patterns: f.patterns.filter((p) => p !== pattern) }));
-  const target = facilities.find((f) => f.code === code);
-  if (target) target.patterns.push(pattern);
-  else facilities.push({ id: newId(), code, name: '', patterns: [pattern], includes: [], alwaysShow: false });
+export function assignPattern(s: Settings, pattern: string, code: string, name = ''): Settings {
+  const facilities = cloneFacilities(s);
+  for (const f of facilities) f.patterns = f.patterns.filter((p) => p !== pattern);
+  targetFacility(facilities, code, name).patterns.push(pattern);
   return { ...s, facilities };
+}
+
+/** Move an included facility code (e.g. ZGGG) to a facility, creating the facility if needed. */
+export function assignInclude(s: Settings, include: string, code: string, name = ''): Settings {
+  if (include === code) return s;
+  const facilities = cloneFacilities(s);
+  for (const f of facilities) f.includes = f.includes.filter((p) => p !== include);
+  targetFacility(facilities, code, name).includes.push(include);
+  return { ...s, facilities };
+}
+
+/** Create or extend a facility. Its patterns and includes move over from any other facility that had them. */
+export function addFacility(
+  s: Settings,
+  def: { code: string; name: string; patterns: string[]; includes: string[]; alwaysShow: boolean },
+): Settings {
+  const facilities = cloneFacilities(s);
+  const target = targetFacility(facilities, def.code, def.name);
+  target.alwaysShow ||= def.alwaysShow;
+  let next: Settings = { ...s, facilities };
+  for (const p of def.patterns) next = assignPattern(next, p, def.code);
+  for (const i of def.includes) next = assignInclude(next, i, def.code);
+  return next;
 }
 
 /** Replace a facility definition; a renamed code keeps its requirement. */

@@ -11,6 +11,26 @@ import {
 } from '../lib/aggregate';
 import * as fmt from '../lib/format';
 import { HOME_SOURCE_TEXT, type HomeFacility } from '../lib/member';
+import { isValidFacilityCode, parsePatternList } from '../lib/patterns';
+
+/** Reassigning a position: a callsign pattern, or the whole underlying facility code. */
+export interface Assignment {
+  kind: 'pattern' | 'include';
+  value: string;
+  facility: string;
+  /** Name for the facility when it's created. */
+  name: string;
+}
+
+export interface NewFacility {
+  code: string;
+  name: string;
+  patterns: string[];
+  includes: string[];
+}
+
+/** Whether a facility code is already known (VATSpy or Settings), and its name. */
+export type CodeInfo = (code: string) => { known: boolean; name: string };
 
 interface Props {
   /** [selected quarter, previous quarter] */
@@ -18,13 +38,17 @@ interface Props {
   currentKey: string;
   requirements: Record<string, number>;
   home: HomeFacility | null;
+  codeInfo: CodeInfo;
   onSetHome(code: string): void;
   /** Drop the user's pick for this CID and go back to the default. */
   onResetHome(): void;
   onSetRequirement(code: string, hours: number | null): void;
-  /** Add a callsign pattern to a facility (created if needed). */
-  onAssign(pattern: string, facility: string): void;
+  onAssign(a: Assignment): void;
+  /** Define a facility (listed even without hours). */
+  onAddFacility(f: NewFacility): void;
 }
+
+const CODE_HELP = 'Facility codes use letters, digits, - and _, for example KZNY or VATSSA.';
 
 export function ReportView(props: Props) {
   const { reports, currentKey } = props;
@@ -47,7 +71,7 @@ export function ReportView(props: Props) {
       <HomeRule report={r} home={props.home} onResetHome={props.onResetHome} />
       <Facilities report={r} {...props} />
       <PositionRequirements report={r} />
-      <Positions report={r} onAssign={props.onAssign} />
+      <Positions report={r} codeInfo={props.codeInfo} onAssign={props.onAssign} />
       <Excluded report={r} />
     </>
   );
@@ -199,63 +223,167 @@ function HomeRule({ report, home, onResetHome }: { report: QuarterReport; home: 
 function Facilities({
   report,
   requirements,
+  codeInfo,
   onSetHome,
   onSetRequirement,
-}: { report: QuarterReport } & Pick<Props, 'requirements' | 'onSetHome' | 'onSetRequirement'>) {
-  if (!report.facilities.length) {
-    return (
-      <section>
-        <h2 className="section-title">By facility</h2>
-        <p className="color-fg-muted">No controlling time in {report.quarter.label}.</p>
-      </section>
-    );
-  }
+  onAddFacility,
+}: { report: QuarterReport } & Pick<Props, 'requirements' | 'codeInfo' | 'onSetHome' | 'onSetRequirement' | 'onAddFacility'>) {
   return (
     <section>
       <h2 className="section-title">By facility</h2>
-      <div className="panel table-wrap">
-        <table className="data facilities">
-          <thead>
-            <tr>
-              <th>Facility</th>
-              {LEVELS.map((l) => (
-                <th key={l} className="num">
-                  {l}
-                </th>
+      {report.facilities.length ? (
+        <div className="panel table-wrap">
+          <table className="data facilities">
+            <thead>
+              <tr>
+                <th>Facility</th>
+                {LEVELS.map((l) => (
+                  <th key={l} className="num">
+                    {l}
+                  </th>
+                ))}
+                <th className="num">Total</th>
+                <th className="num">Share</th>
+                <th className="num">Required</th>
+                <th>Status</th>
+                <th className="text-center">Home</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.facilities.map((f) => (
+                <FacilityRow
+                  key={f.code}
+                  f={f}
+                  custom={f.code in requirements}
+                  onSetHome={onSetHome}
+                  onSetRequirement={onSetRequirement}
+                />
               ))}
-              <th className="num">Total</th>
-              <th className="num">Share</th>
-              <th className="num">Required</th>
-              <th>Status</th>
-              <th className="text-center">Home</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.facilities.map((f) => (
-              <FacilityRow
-                key={f.code}
-                f={f}
-                custom={f.code in requirements}
-                onSetHome={onSetHome}
-                onSetRequirement={onSetRequirement}
-              />
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td>All facilities</td>
-              {LEVELS.map((l) => (
-                <td key={l} className="num">
-                  {fmt.hours(report.levels[l])}
-                </td>
-              ))}
-              <td className="num">{fmt.hours(report.total)}</td>
-              <td colSpan={4} />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>All facilities</td>
+                {LEVELS.map((l) => (
+                  <td key={l} className="num">
+                    {fmt.hours(report.levels[l])}
+                  </td>
+                ))}
+                <td className="num">{fmt.hours(report.total)}</td>
+                <td colSpan={4} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ) : (
+        <p className="color-fg-muted">No controlling time in {report.quarter.label}.</p>
+      )}
+      <AddFacilityForm codeInfo={codeInfo} onAdd={onAddFacility} />
     </section>
+  );
+}
+
+function AddFacilityForm({ codeInfo, onAdd }: { codeInfo: CodeInfo; onAdd(f: NewFacility): void }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [patterns, setPatterns] = useState('');
+  const [includes, setIncludes] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button className="btn btn-sm mt-2" onClick={() => setOpen(true)}>
+        Add a facility
+      </button>
+    );
+  }
+
+  const c = code.trim().toUpperCase();
+  const info = c ? codeInfo(c) : null;
+  const close = () => {
+    setOpen(false);
+    setCode('');
+    setName('');
+    setPatterns('');
+    setIncludes('');
+    setProblem(null);
+  };
+
+  const submit = () => {
+    if (!isValidFacilityCode(c)) return setProblem(CODE_HELP);
+    const p = parsePatternList(patterns);
+    const inc = parsePatternList(includes, 'code');
+    const invalid = [...p.invalid, ...inc.invalid];
+    if (invalid.length) return setProblem(`Can't use ${invalid.join(', ')}. Patterns use letters, digits, _ and * (and - in facility codes).`);
+    if (!p.patterns.length && !inc.patterns.length && !info?.known) {
+      return setProblem(`${c} is a new code, so give it at least one callsign pattern or included facility.`);
+    }
+    onAdd({ code: c, name: name.trim(), patterns: p.patterns, includes: inc.patterns.filter((x) => x !== c) });
+    close();
+  };
+
+  return (
+    <div className="panel mt-2">
+      <div className="panel-body">
+        <form
+          className="hstack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <input
+            className="form-control input-sm input-monospace"
+            list="facility-codes"
+            placeholder="Code: KZNY, VATSSA"
+            size={16}
+            spellCheck={false}
+            autoFocus
+            value={code}
+            aria-label="Facility code"
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <input
+            className="form-control input-sm"
+            placeholder={info?.name || 'Name (optional)'}
+            size={18}
+            value={name}
+            aria-label="Facility name"
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="form-control input-sm input-monospace"
+            placeholder="Callsigns: NY_*, JFK_*"
+            size={20}
+            spellCheck={false}
+            value={patterns}
+            aria-label="Callsign patterns"
+            onChange={(e) => setPatterns(e.target.value)}
+          />
+          <input
+            className="form-control input-sm input-monospace"
+            placeholder="Includes: FA*, FY*"
+            size={16}
+            spellCheck={false}
+            value={includes}
+            aria-label="Included facility codes"
+            onChange={(e) => setIncludes(e.target.value)}
+          />
+          <button type="submit" className="btn btn-sm btn-primary">
+            Add
+          </button>
+          <button type="button" className="btn btn-sm" onClick={close}>
+            Cancel
+          </button>
+        </form>
+        <p className="f6 color-fg-muted mt-2 mb-0">
+          {c && info?.known ? `Adds ${c}${info.name ? ` ${info.name}` : ''}. ` : c ? `Creates facility ${c}. ` : ''}
+          Callsign patterns take <span className="text-mono">*</span> wildcards. Leave both lists empty for a facility VATSpy already knows.
+          It stays listed, even with no hours, until you remove it in Settings.
+        </p>
+        {problem && <p className="f6 color-fg-danger mt-1 mb-0">{problem}</p>}
+      </div>
+    </div>
   );
 }
 
@@ -398,7 +526,7 @@ function PositionRequirements({ report }: { report: QuarterReport }) {
   );
 }
 
-function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Props['onAssign'] }) {
+function Positions({ report, codeInfo, onAssign }: { report: QuarterReport; codeInfo: CodeInfo; onAssign: Props['onAssign'] }) {
   const [editing, setEditing] = useState<string | null>(null);
   const groups = report.facilities.filter((f) => f.positions.length);
   if (!groups.length) return null;
@@ -462,8 +590,9 @@ function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Prop
                         <td colSpan={6}>
                           <AssignForm
                             position={p}
-                            onSave={(pattern, facility) => {
-                              onAssign(pattern, facility);
+                            codeInfo={codeInfo}
+                            onSave={(a) => {
+                              onAssign(a);
                               setEditing(null);
                             }}
                             onCancel={() => setEditing(null)}
@@ -484,53 +613,98 @@ function Positions({ report, onAssign }: { report: QuarterReport; onAssign: Prop
 
 function AssignForm({
   position,
+  codeInfo,
   onSave,
   onCancel,
 }: {
   position: PositionStat;
-  onSave(pattern: string, facility: string): void;
+  codeInfo: CodeInfo;
+  onSave(a: Assignment): void;
   onCancel(): void;
 }) {
-  // Shortest prefix first (DCA_*), then longer ones (DCA_N_*), then the exact callsign.
-  const options = [...prefixCandidates(position.segments).reverse().map((c) => `${c}_*`), position.callsign];
-  const [pattern, setPattern] = useState(options[0]);
+  // The VATSpy facility the callsign resolved to, before any grouping. Moving "all of" it only makes
+  // sense when it came from VATSpy rather than from one of the user's own callsign patterns.
+  const r = position.resolution;
+  const underlying = r.groupedFrom ?? (r.source === 'custom' || r.source === 'unknown' ? null : r.facility);
+  // Shortest prefix first (DCA_*), then longer ones (DCA_N_*), then the exact callsign, then the whole facility.
+  const options: { value: string; label: string }[] = [
+    ...prefixCandidates(position.segments)
+      .reverse()
+      .map((c) => ({ value: `pattern:${c}_*`, label: `${c}_*` })),
+    { value: `pattern:${position.callsign}`, label: position.callsign },
+    ...(underlying ? [{ value: `include:${underlying}`, label: `all of ${underlying}` }] : []),
+  ];
+  const [choice, setChoice] = useState(options[0].value);
   const [facility, setFacility] = useState(position.facility === UNKNOWN ? '' : position.facility);
+  const [name, setName] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const code = facility.trim().toUpperCase();
+  const info = code ? codeInfo(code) : null;
+  const split = choice.indexOf(':');
+  const kind = choice.slice(0, split) as Assignment['kind'];
+  const value = choice.slice(split + 1);
+
   return (
-    <form
-      className="hstack"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const code = facility.trim().toUpperCase();
-        if (code) onSave(pattern, code);
-      }}
-    >
-      <span>Assign</span>
-      <select className="form-select input-sm input-monospace" value={pattern} onChange={(e) => setPattern(e.target.value)}>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-      <span>to facility</span>
-      <input
-        className="form-control input-sm input-monospace"
-        list="facility-codes"
-        value={facility}
-        onChange={(e) => setFacility(e.target.value)}
-        placeholder="KZDC"
-        size={10}
-        autoFocus
-        spellCheck={false}
-      />
-      <button type="submit" className="btn btn-sm btn-primary">
-        Save
-      </button>
-      <button type="button" className="btn btn-sm" onClick={onCancel}>
-        Cancel
-      </button>
-      <span className="f6 color-fg-muted">Adds the pattern to that facility in Settings.</span>
-    </form>
+    <>
+      <form
+        className="hstack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!isValidFacilityCode(code)) return setProblem(CODE_HELP);
+          if (kind === 'include' && value === code) return setProblem(`${value} is already that facility.`);
+          onSave({ kind, value, facility: code, name: name.trim() });
+        }}
+      >
+        <span>Assign</span>
+        <select className="form-select input-sm input-monospace" value={choice} onChange={(e) => setChoice(e.target.value)}>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <span>to</span>
+        <input
+          className="form-control input-sm input-monospace"
+          list="facility-codes"
+          value={facility}
+          onChange={(e) => {
+            setFacility(e.target.value);
+            setProblem(null);
+          }}
+          placeholder="KZDC or VATPRC"
+          size={14}
+          autoFocus
+          spellCheck={false}
+          aria-label="Facility code"
+        />
+        {info && !info.known && (
+          <input
+            className="form-control input-sm"
+            placeholder="Name for the new facility"
+            size={22}
+            value={name}
+            aria-label="New facility name"
+            onChange={(e) => setName(e.target.value)}
+          />
+        )}
+        <button type="submit" className="btn btn-sm btn-primary">
+          Save
+        </button>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+        <span className="f6 color-fg-muted">
+          {!code
+            ? 'Type an existing facility, or a new code such as VATSSA.'
+            : info?.known
+              ? `${code}${info.name ? ` ${info.name}` : ''}`
+              : `Creates facility ${code}.`}
+        </span>
+      </form>
+      {problem && <p className="f6 color-fg-danger mt-1 mb-0">{problem}</p>}
+    </>
   );
 }
 
