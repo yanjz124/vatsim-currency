@@ -6,8 +6,10 @@ import { compilePattern, isValidFacilityCode, isValidPattern, parsePatternList }
 import {
   ALL_SUFFIXES,
   DEFAULT_SETTINGS,
+  describeCustomization,
   newId,
   updateFacility,
+  type CidCustomization,
   type FacilityDef,
   type PositionRule,
   type Settings,
@@ -18,9 +20,10 @@ import { facilityName, type VatspyData } from '../lib/vatspy';
 interface Props {
   settings: Settings;
   update(fn: (s: Settings) => Settings): void;
-  homeChoices: Record<string, string>;
-  /** Replace settings (and per-CID home picks, when the source has them). */
-  onRestore(settings: Settings, homeChoices: Record<string, string> | null): void;
+  customizations: Record<string, CidCustomization>;
+  /** Replace settings (and per-CID changes, when the source has them). */
+  onRestore(settings: Settings, customizations: Record<string, CidCustomization> | null): void;
+  onClearCustomization(cid: string): void;
   vatspy: VatspyData | null;
   vatspyError: string | null;
   onReloadVatspy(): void;
@@ -259,7 +262,17 @@ function PositionRuleRow({ rule, onSave, onRemove }: { rule: PositionRule; onSav
 const EMPTY_FACILITY = { code: '', name: '', patterns: '', includes: '', alwaysShow: true };
 const EMPTY_RULE = { name: '', patterns: '', hours: '', countsTowardFacility: true };
 
-export function SettingsView({ settings, update, homeChoices, onRestore, vatspy, vatspyError, onReloadVatspy, onClearCache }: Props) {
+export function SettingsView({
+  settings,
+  update,
+  customizations,
+  onRestore,
+  onClearCustomization,
+  vatspy,
+  vatspyError,
+  onReloadVatspy,
+  onClearCache,
+}: Props) {
   const [reqCode, setReqCode] = useState('');
   const [reqHours, setReqHours] = useState('');
   const [newFac, setNewFac] = useState(EMPTY_FACILITY);
@@ -339,7 +352,7 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
   };
 
   const exportSettings = () => {
-    const blob = new Blob([JSON.stringify(makeBackup(settings, homeChoices), null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(makeBackup(settings, customizations), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = backupFileName();
@@ -356,7 +369,7 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
       const restored = await readBackupFile(file);
       const summary = `${fmt.plural(restored.settings.facilities.length, 'facility', 'facilities')}, ${fmt.plural(restored.settings.positionRules.length, 'position rule')}`;
       if (!window.confirm(`Replace your current settings with the ones in ${file.name} (${summary})?`)) return;
-      onRestore(restored.settings, restored.homeChoices);
+      onRestore(restored.settings, restored.customizations);
       setNotice(`Settings restored from ${file.name}.`);
     } catch (e) {
       setNotice((e as Error).message);
@@ -368,7 +381,7 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
     try {
       await navigator.clipboard.writeText(url);
       setLink(null);
-      setNotice('Link copied. Opening it offers to load these facilities and rules; home picks per CID are not included.');
+      setNotice('Link copied. Opening it offers to load these facilities and rules; changes made for individual CIDs are not included.');
     } catch {
       setLink(url);
       setNotice('Copy this link:');
@@ -700,6 +713,42 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
       </Section>
 
       <Section
+        title="Changes for individual CIDs"
+        desc="Facilities added, positions reassigned, requirements edited and home facilities picked in a report apply to that CID only. They're kept until cleared; everything else on this page applies to every CID."
+      >
+        {Object.keys(customizations).length ? (
+          <div className="panel">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>CID</th>
+                  <th>Changes</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(customizations)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cid, c]) => (
+                    <tr key={cid}>
+                      <td className="text-mono">{cid}</td>
+                      <td className="f6">{describeCustomization(c)}</td>
+                      <td className="text-right">
+                        <button className="btn-link f6" onClick={() => onClearCustomization(cid)}>
+                          Clear
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="color-fg-muted">None yet.</p>
+        )}
+      </Section>
+
+      <Section
         title="Back up and restore"
         desc="Settings are saved in this browser automatically. Export a backup to restore them later or on another device. Exported .xlsx reports include a backup too."
       >
@@ -732,7 +781,7 @@ export function SettingsView({ settings, update, homeChoices, onRestore, vatspy,
           </button>
         </div>
         <p className="f6 color-fg-muted mt-2 mb-0">
-          Import accepts a settings .json file or an exported report. The backup file also keeps your home facility picks per CID.
+          Import accepts a settings .json file or an exported report. Backups also keep the changes made for individual CIDs.
         </p>
         {notice && <p className="mt-2 mb-0">{notice}</p>}
         {link && <input className="form-control input-sm input-monospace width-full mt-2" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />}

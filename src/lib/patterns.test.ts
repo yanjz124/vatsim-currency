@@ -3,8 +3,13 @@ import { compileCodePattern, compilePattern, isValidFacilityCode, parsePatternLi
 import {
   DEFAULT_SETTINGS,
   addFacility,
+  applyCustomization,
   assignInclude,
   assignPattern,
+  describeCustomization,
+  emptyCustomization,
+  isEmptyCustomization,
+  normalizeCustomizations,
   normalizeSettings,
   updateFacility,
   type Settings,
@@ -130,6 +135,45 @@ describe('settings', () => {
     s = addFacility(s, { code: 'KZNY', name: 'New York', patterns: ['EWR_*'], includes: [], alwaysShow: false });
     expect(s.facilities.filter((f) => f.code === 'KZNY')).toHaveLength(1);
     expect(s.facilities.find((f) => f.code === 'KZNY')).toMatchObject({ name: 'New York', patterns: ['NY_*', 'JFK_*', 'EWR_*'], alwaysShow: true });
+  });
+
+  it('keeps report changes per CID and layers them over shared settings', () => {
+    const shared: Settings = {
+      ...DEFAULT_SETTINGS,
+      requirements: { KZDC: 5 },
+      facilities: [...DEFAULT_SETTINGS.facilities, { id: 'z', code: 'ZDC', name: '', patterns: ['DC_*', 'PCT_*'], includes: [], alwaysShow: false }],
+    };
+    let custom = emptyCustomization();
+    expect(isEmptyCustomization(custom)).toBe(true);
+    custom = addFacility(custom, { code: 'KZNY', name: '', patterns: [], includes: [], alwaysShow: true });
+    custom = assignPattern(custom, 'PCT_*', 'POTOMAC');
+    custom = { ...custom, requirements: { KZDC: 2 }, home: 'ZDC' };
+    expect(describeCustomization(custom)).toBe('home ZDC; facilities KZNY, POTOMAC; requirements KZDC 2 h');
+
+    const applied = applyCustomization(shared, custom);
+    expect(applied.requirements).toEqual({ KZDC: 2 });
+    expect(applied.facilities.find((f) => f.code === 'KZNY')).toMatchObject({ alwaysShow: true });
+    expect(applied.facilities.find((f) => f.code === 'ZDC')?.patterns).toEqual(['DC_*']); // PCT_* moved for this CID
+    expect(applied.facilities.find((f) => f.code === 'POTOMAC')?.patterns).toEqual(['PCT_*']);
+    // Shared settings are untouched, so another CID doesn't see any of it.
+    expect(shared.facilities.find((f) => f.code === 'ZDC')?.patterns).toEqual(['DC_*', 'PCT_*']);
+    expect(applyCustomization(shared, undefined)).toBe(shared);
+  });
+
+  it('cleans stored per-CID changes', () => {
+    const raw = {
+      '1340265': { home: ' kzdc ', facilities: [{ code: 'kzny', alwaysShow: true, patterns: ['ny_*', 'bad one'] }], requirements: { kztl: 2, x: -1 } },
+      '1575101': { facilities: [], requirements: {} },
+      notacid: { home: 'X' },
+    };
+    expect(normalizeCustomizations(raw)).toEqual({
+      '1340265': {
+        home: 'KZDC',
+        facilities: [{ id: expect.any(String), code: 'KZNY', name: '', patterns: ['NY_*'], includes: [], alwaysShow: true }],
+        requirements: { KZTL: 2 },
+      },
+    });
+    expect(normalizeCustomizations(null)).toEqual({});
   });
 
   it('carries a requirement over when a facility is renamed', () => {

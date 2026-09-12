@@ -1,4 +1,4 @@
-import { normalizeSettings, type Settings } from './settings';
+import { normalizeCustomizations, normalizeSettings, type CidCustomization, type Settings } from './settings';
 
 // Settings live in localStorage. These helpers move them in and out: a .json backup file, the
 // Settings sheet of an exported .xlsx report, or a link that carries the settings in its #hash.
@@ -10,42 +10,45 @@ export const BACKUP_CELL_LABEL = 'Settings backup (JSON)';
 export interface Backup {
   app: typeof BACKUP_APP;
   kind: 'settings';
-  version: 1;
+  version: 2;
   exportedAt: string;
   settings: Settings;
-  /** Home facility picked per CID. */
-  homeChoices: Record<string, string>;
+  /** Changes made in reports, per CID. */
+  customizations: Record<string, CidCustomization>;
 }
 
 export interface Restored {
   settings: Settings;
   /** null when the source had none (old exports, shared links). */
-  homeChoices: Record<string, string> | null;
+  customizations: Record<string, CidCustomization> | null;
 }
 
-export function makeBackup(settings: Settings, homeChoices: Record<string, string>): Backup {
-  return { app: BACKUP_APP, kind: 'settings', version: 1, exportedAt: new Date().toISOString(), settings, homeChoices };
+export function makeBackup(settings: Settings, customizations: Record<string, CidCustomization>): Backup {
+  return { app: BACKUP_APP, kind: 'settings', version: 2, exportedAt: new Date().toISOString(), settings, customizations };
 }
 
 export function backupFileName(at = Date.now()): string {
   return `vatsim-currency-settings_${new Date(at).toISOString().slice(0, 10)}.json`;
 }
 
-/** Accepts a backup, or a bare settings object as exported by earlier versions. */
+/** Accepts a backup (current or version 1, which only kept home picks), or a bare settings object. */
 export function parseBackup(raw: unknown): Restored {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error("That file doesn't contain settings.");
-  const r = raw as Partial<Backup>;
+  const r = raw as Partial<Backup> & { homeChoices?: unknown };
   if (r.app === BACKUP_APP && r.settings && typeof r.settings === 'object') {
-    const homeChoices = Object.fromEntries(
-      Object.entries(r.homeChoices && typeof r.homeChoices === 'object' ? r.homeChoices : {})
-        .filter(([cid, code]) => /^\d{3,10}$/.test(cid) && typeof code === 'string' && code.trim())
-        .map(([cid, code]) => [cid, code.trim().toUpperCase()]),
-    );
-    return { settings: normalizeSettings(r.settings), homeChoices };
+    const customizations = normalizeCustomizations(r.customizations);
+    // Version 1 backups stored home picks on their own.
+    for (const [cid, code] of Object.entries(r.homeChoices && typeof r.homeChoices === 'object' ? r.homeChoices : {})) {
+      if (/^\d{3,10}$/.test(cid) && typeof code === 'string' && code.trim()) {
+        customizations[cid] ??= { facilities: [], requirements: {} };
+        customizations[cid].home ??= code.trim().toUpperCase();
+      }
+    }
+    return { settings: normalizeSettings(r.settings), customizations };
   }
   const looksLikeSettings = ['facilities', 'overrides', 'defaultRequirement', 'requirements', 'countedSuffixes'].some((k) => k in raw);
   if (!looksLikeSettings) throw new Error("That file doesn't contain settings.");
-  return { settings: normalizeSettings(raw), homeChoices: null };
+  return { settings: normalizeSettings(raw), customizations: null };
 }
 
 /** Read a backup from a .json file, or from the Settings sheet of an exported .xlsx report. */

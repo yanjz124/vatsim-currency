@@ -1,7 +1,7 @@
 import { LEVELS, UNKNOWN, describeResolution, ruleLabel, type QuarterReport } from './aggregate';
 import { BACKUP_CELL_LABEL, makeBackup } from './backup';
 import { HOME_SOURCE_TEXT, type HomeFacility, type MemberInfo } from './member';
-import type { Settings } from './settings';
+import { describeCustomization, type CidCustomization, type Settings } from './settings';
 import type { SessionSet } from './vatsimApi';
 import type { VatspyData } from './vatspy';
 
@@ -25,8 +25,9 @@ export interface ExportInput {
   cid: string;
   data: SessionSet;
   reports: QuarterReport[];
+  /** Shared settings (without this CID's changes). */
   settings: Settings;
-  homeChoices: Record<string, string>;
+  customizations: Record<string, CidCustomization>;
   vatspy: VatspyData | null;
   member: MemberInfo | null;
   home: HomeFacility | null;
@@ -40,7 +41,7 @@ export function exportFileName(cid: string, at: number): string {
 
 export async function exportWorkbook(input: ExportInput): Promise<void> {
   const XLSX = await import('xlsx');
-  const { cid, data, reports, settings, homeChoices, vatspy, member, home, calculatedAt } = input;
+  const { cid, data, reports, settings, customizations, vatspy, member, home, calculatedAt } = input;
   const exportedAt = Date.now();
   const wb = XLSX.utils.book_new();
 
@@ -256,7 +257,8 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
   }
   setRows.push([], ['Facility', 'Requirement (h / quarter)']);
   for (const [code, h] of Object.entries(settings.requirements)) setRows.push([code, num(h)]);
-  const backup = JSON.stringify(makeBackup(settings, homeChoices));
+  if (customizations[cid]) setRows.push([], [`Changes for CID ${cid} only`, describeCustomization(customizations[cid])]);
+  const backup = JSON.stringify(makeBackup(settings, customizations));
   setRows.push(
     [],
     ['Report generated', iso(exportedAt)],

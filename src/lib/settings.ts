@@ -83,20 +83,9 @@ const cleanList = (v: unknown, valid: (p: string) => boolean) => [
   ...new Set((Array.isArray(v) ? v : []).map((p) => normalizePattern(String(p))).filter(valid)),
 ];
 
-/** Version 1 kept callsign-prefix rules and facility merges in a single list. */
-interface LegacyOverride {
-  kind?: string;
-  match?: string;
-  facility?: string;
-}
-
-export function normalizeSettings(raw: unknown): Settings {
-  const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<Settings> & { overrides?: LegacyOverride[] };
-  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d);
-
+function cleanFacilities(list: unknown): FacilityDef[] {
   const facilities: FacilityDef[] = [];
-  const source = (Array.isArray(s.facilities) ? s.facilities : DEFAULT_FACILITIES) as Partial<FacilityDef>[];
-  for (const f of source) {
+  for (const f of (Array.isArray(list) ? list : []) as Partial<FacilityDef>[]) {
     const code = toCode(f?.code);
     if (!code || facilities.some((x) => x.code === code)) continue;
     facilities.push({
@@ -108,6 +97,29 @@ export function normalizeSettings(raw: unknown): Settings {
       alwaysShow: f.alwaysShow === true,
     });
   }
+  return facilities;
+}
+
+function cleanRequirements(raw: unknown): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(raw && typeof raw === 'object' ? raw : {})
+      .filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+      .map(([k, v]) => [k.toUpperCase(), v as number]),
+  );
+}
+
+/** Version 1 kept callsign-prefix rules and facility merges in a single list. */
+interface LegacyOverride {
+  kind?: string;
+  match?: string;
+  facility?: string;
+}
+
+export function normalizeSettings(raw: unknown): Settings {
+  const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<Settings> & { overrides?: LegacyOverride[] };
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d);
+
+  const facilities = cleanFacilities(Array.isArray(s.facilities) ? s.facilities : DEFAULT_FACILITIES);
 
   const facilityFor = (code: string) => {
     let f = facilities.find((x) => x.code === code);
@@ -140,11 +152,7 @@ export function normalizeSettings(raw: unknown): Settings {
   return {
     version: 2,
     defaultRequirement: num(s.defaultRequirement, DEFAULT_SETTINGS.defaultRequirement),
-    requirements: Object.fromEntries(
-      Object.entries(s.requirements ?? {})
-        .filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-        .map(([k, v]) => [k.toUpperCase(), v]),
-    ),
+    requirements: cleanRequirements(s.requirements),
     facilities,
     positionRules,
     countedSuffixes: Array.isArray(s.countedSuffixes)
@@ -169,7 +177,10 @@ export function requirementFor(s: Settings, facility: string): number {
   return s.requirements[facility] ?? s.defaultRequirement;
 }
 
-const cloneFacilities = (s: Settings) => s.facilities.map((f) => ({ ...f, patterns: [...f.patterns], includes: [...f.includes] }));
+/** The facility helpers below work on Settings and on per-CID customizations alike. */
+type HasFacilities = { facilities: FacilityDef[] };
+
+const cloneFacilities = (s: HasFacilities) => s.facilities.map((f) => ({ ...f, patterns: [...f.patterns], includes: [...f.includes] }));
 
 /** The facility with `code` in `facilities`, created (and appended) if missing. */
 function targetFacility(facilities: FacilityDef[], code: string, name: string): FacilityDef {
@@ -180,7 +191,7 @@ function targetFacility(facilities: FacilityDef[], code: string, name: string): 
 }
 
 /** Move a callsign pattern to a facility (removing it from any other), creating the facility if needed. */
-export function assignPattern(s: Settings, pattern: string, code: string, name = ''): Settings {
+export function assignPattern<T extends HasFacilities>(s: T, pattern: string, code: string, name = ''): T {
   const facilities = cloneFacilities(s);
   for (const f of facilities) f.patterns = f.patterns.filter((p) => p !== pattern);
   targetFacility(facilities, code, name).patterns.push(pattern);
@@ -188,7 +199,7 @@ export function assignPattern(s: Settings, pattern: string, code: string, name =
 }
 
 /** Move an included facility code (e.g. ZGGG) to a facility, creating the facility if needed. */
-export function assignInclude(s: Settings, include: string, code: string, name = ''): Settings {
+export function assignInclude<T extends HasFacilities>(s: T, include: string, code: string, name = ''): T {
   if (include === code) return s;
   const facilities = cloneFacilities(s);
   for (const f of facilities) f.includes = f.includes.filter((p) => p !== include);
@@ -197,14 +208,14 @@ export function assignInclude(s: Settings, include: string, code: string, name =
 }
 
 /** Create or extend a facility. Its patterns and includes move over from any other facility that had them. */
-export function addFacility(
-  s: Settings,
+export function addFacility<T extends HasFacilities>(
+  s: T,
   def: { code: string; name: string; patterns: string[]; includes: string[]; alwaysShow: boolean },
-): Settings {
+): T {
   const facilities = cloneFacilities(s);
   const target = targetFacility(facilities, def.code, def.name);
   target.alwaysShow ||= def.alwaysShow;
-  let next: Settings = { ...s, facilities };
+  let next: T = { ...s, facilities };
   for (const p of def.patterns) next = assignPattern(next, p, def.code);
   for (const i of def.includes) next = assignInclude(next, i, def.code);
   return next;
@@ -219,6 +230,54 @@ export function updateFacility(s: Settings, next: FacilityDef): Settings {
     delete requirements[prev.code];
   }
   return { ...s, requirements, facilities: s.facilities.map((f) => (f.id === next.id ? next : f)) };
+}
+
+// ---------------------------------------------------------------------------
+// Changes made from a report belong to that CID only.
+// ---------------------------------------------------------------------------
+
+export interface CidCustomization {
+  /** Home facility picked in the report. */
+  home?: string;
+  /** Facilities added, and positions or facilities reassigned, in this CID's report. */
+  facilities: FacilityDef[];
+  /** Requirements edited in this CID's report. */
+  requirements: Record<string, number>;
+}
+
+export const emptyCustomization = (): CidCustomization => ({ facilities: [], requirements: {} });
+
+export const isEmptyCustomization = (c: CidCustomization | undefined): boolean =>
+  !c || (!c.home && !c.facilities.length && !Object.keys(c.requirements).length);
+
+export function normalizeCustomizations(raw: unknown): Record<string, CidCustomization> {
+  const out: Record<string, CidCustomization> = {};
+  for (const [cid, value] of Object.entries(raw && typeof raw === 'object' ? raw : {})) {
+    if (!/^\d{3,10}$/.test(cid) || !value || typeof value !== 'object') continue;
+    const v = value as Partial<CidCustomization>;
+    const c: CidCustomization = { facilities: cleanFacilities(v.facilities), requirements: cleanRequirements(v.requirements) };
+    const home = toCode(v.home);
+    if (home) c.home = home;
+    if (!isEmptyCustomization(c)) out[cid] = c;
+  }
+  return out;
+}
+
+/** Settings as they apply to one CID: its own facilities and requirements layered over the shared ones. */
+export function applyCustomization(s: Settings, c: CidCustomization | undefined): Settings {
+  if (!c) return s;
+  let next: Settings = { ...s, requirements: { ...s.requirements, ...c.requirements } };
+  for (const f of c.facilities) next = addFacility(next, f);
+  return next;
+}
+
+export function describeCustomization(c: CidCustomization): string {
+  const parts: string[] = [];
+  if (c.home) parts.push(`home ${c.home}`);
+  if (c.facilities.length) parts.push(`facilities ${c.facilities.map((f) => f.code).join(', ')}`);
+  const reqs = Object.entries(c.requirements);
+  if (reqs.length) parts.push(`requirements ${reqs.map(([code, h]) => `${code} ${h} h`).join(', ')}`);
+  return parts.join('; ');
 }
 
 export function newId(): string {

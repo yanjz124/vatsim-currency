@@ -71,11 +71,13 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
 
 ## Settings backup
 
-Settings save automatically in the browser. Under Settings → Back up and restore:
+Settings save automatically in the browser. Changes made inside a report (facilities added, positions reassigned, requirements edited, the home facility picked) are saved for that CID only: another CID starts from the shared settings, and coming back restores them. A note above the report lists them, with **Reset** and **Use them for every CID**; Settings → Changes for individual CIDs lists every CID that has some.
 
-- **Export settings** downloads a `.json` backup, including the home-facility pick for each CID.
+Under Settings → Back up and restore:
+
+- **Export settings** downloads a `.json` backup, including the changes saved for each CID.
 - **Import settings** restores from that file, or from any `.xlsx` report exported by this version, which carries the same backup on its Settings sheet.
-- **Copy settings link** puts the facilities, rules and requirements into a link (`#settings=…`, compressed). Opening it asks before replacing the current settings. Per-CID home picks are not included.
+- **Copy settings link** puts the facilities, rules and requirements into a link (`#settings=…`, compressed). Opening it asks before replacing the current settings. Changes saved for individual CIDs are not included.
 
 ## Spreadsheet export
 

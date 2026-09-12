@@ -5,7 +5,20 @@ import { exportWorkbook } from './lib/export';
 import * as fmt from './lib/format';
 import { fetchMemberInfo, getCachedMember, memberFacilities, type HomeFacility, type MemberInfo } from './lib/member';
 import { quarterFromKey, recentQuarters, shiftQuarter, type Quarter } from './lib/quarters';
-import { addFacility, assignInclude, assignPattern, loadSettings, saveSettings, type Settings } from './lib/settings';
+import {
+  addFacility,
+  applyCustomization,
+  assignInclude,
+  assignPattern,
+  describeCustomization,
+  emptyCustomization,
+  isEmptyCustomization,
+  loadSettings,
+  normalizeCustomizations,
+  saveSettings,
+  type CidCustomization,
+  type Settings,
+} from './lib/settings';
 import { clearStore, local } from './lib/storage';
 import {
   ApiError,
@@ -30,8 +43,25 @@ const SOURCE_TEXT: Record<Settings['fetchMode'], string> = {
   direct: 'direct API',
 };
 
-/** Home facility picked by the user, per CID. */
-const HOME_KEY = 'home:v1';
+/** Changes made in reports, per CID. */
+const CUSTOM_KEY = 'custom:v1';
+/** Where home picks were kept before per-CID changes existed. */
+const LEGACY_HOME_KEY = 'home:v1';
+
+function loadCustomizations(): Record<string, CidCustomization> {
+  const stored = normalizeCustomizations(local.get(CUSTOM_KEY));
+  const legacy = local.get<Record<string, string>>(LEGACY_HOME_KEY);
+  if (legacy && typeof legacy === 'object') {
+    for (const [cid, code] of Object.entries(legacy)) {
+      if (!/^\d{3,10}$/.test(cid) || typeof code !== 'string' || !code) continue;
+      stored[cid] ??= emptyCustomization();
+      stored[cid].home ??= code.toUpperCase();
+    }
+    local.set(CUSTOM_KEY, stored);
+    local.set(LEGACY_HOME_KEY, null);
+  }
+  return stored;
+}
 
 interface ErrorState {
   message: string;
@@ -88,26 +118,38 @@ export default function App() {
   const [error, setError] = useState<ErrorState | null>(null);
   const [manualFor, setManualFor] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [homeChoices, setHomeChoices] = useState<Record<string, string>>(() => local.get<Record<string, string>>(HOME_KEY) ?? {});
+  const [customizations, setCustomizations] = useState(loadCustomizations);
   const abortRef = useRef<AbortController | null>(null);
   const now = fmt.useNow(1000);
 
-  const chooseHome = useCallback((cid: string, code: string | null) => {
-    setHomeChoices((prev) => {
+  const updateCustomization = useCallback((cid: string, fn: (c: CidCustomization) => CidCustomization) => {
+    setCustomizations((prev) => {
       const next = { ...prev };
-      if (code) next[cid] = code;
-      else delete next[cid];
-      local.set(HOME_KEY, next);
+      const c = fn(prev[cid] ?? emptyCustomization());
+      if (isEmptyCustomization(c)) delete next[cid];
+      else next[cid] = c;
+      local.set(CUSTOM_KEY, next);
       return next;
     });
   }, []);
 
+  const chooseHome = useCallback(
+    (cid: string, code: string | null) =>
+      updateCustomization(cid, (c) => {
+        const next = { ...c };
+        if (code) next.home = code;
+        else delete next.home;
+        return next;
+      }),
+    [updateCustomization],
+  );
+
   const restore = useCallback(
-    (next: Settings, choices: Record<string, string> | null) => {
+    (next: Settings, custom: Record<string, CidCustomization> | null) => {
       updateSettings(() => next);
-      if (choices) {
-        local.set(HOME_KEY, choices);
-        setHomeChoices(choices);
+      if (custom) {
+        local.set(CUSTOM_KEY, custom);
+        setCustomizations(custom);
       }
     },
     [updateSettings],
@@ -233,13 +275,17 @@ export default function App() {
   const computed = useMemo(() => {
     if (!data) return null;
     const info = member?.cid === data.cid ? member : null;
-    const fromMember = memberFacilities(info, vatspy, settings);
+    const custom = customizations[data.cid];
+    const cidSettings = applyCustomization(settings, custom);
+    const fromMember = memberFacilities(info, vatspy, cidSettings);
     // A home facility built from VATSIM data (e.g. CAN) groups the member's facilities for this report only.
-    const reportSettings = fromMember.autoFacility ? { ...settings, facilities: [...settings.facilities, fromMember.autoFacility] } : settings;
+    const reportSettings = fromMember.autoFacility
+      ? { ...cidSettings, facilities: [...cidSettings.facilities, fromMember.autoFacility] }
+      : cidSettings;
     const busiest = (q: Quarter) =>
       buildReport(data.sessions, q, vatspy, reportSettings).facilities.find((f) => f.code !== UNKNOWN && f.hours > 0)?.code;
 
-    const choice = homeChoices[data.cid];
+    const choice = custom?.home;
     let home: HomeFacility | null = choice ? { code: choice, source: 'choice' } : fromMember.home;
     if (!home) {
       const code = busiest(focus) ?? busiest(previous);
@@ -250,17 +296,21 @@ export default function App() {
       reports: [buildReport(data.sessions, focus, vatspy, reportSettings, ctx), buildReport(data.sessions, previous, vatspy, reportSettings, ctx)],
       home,
       autoFacility: fromMember.autoFacility,
+      cidSettings,
       member: info,
       at: Date.now(),
     };
-  }, [data, member, focus, previous, vatspy, settings, homeChoices]);
+  }, [data, member, focus, previous, vatspy, settings, customizations]);
 
   const codes = useMemo(
     () =>
-      [...new Set([...settings.facilities.map((f) => f.code), ...facilityCodes(vatspy)])]
+      [...new Set([...(computed?.cidSettings ?? settings).facilities.map((f) => f.code), ...facilityCodes(vatspy)])]
         .sort()
-        .map((code) => ({ code, name: settings.facilities.find((f) => f.code === code)?.name || facilityName(code, vatspy) })),
-    [vatspy, settings.facilities],
+        .map((code) => ({
+          code,
+          name: (computed?.cidSettings ?? settings).facilities.find((f) => f.code === code)?.name || facilityName(code, vatspy),
+        })),
+    [vatspy, settings, computed?.cidSettings],
   );
   const codeInfo = useMemo(() => {
     const names = new Map(codes.map((c) => [c.code, c.name]));
@@ -276,7 +326,7 @@ export default function App() {
         data,
         reports: computed.reports,
         settings,
-        homeChoices,
+        customizations,
         vatspy,
         member: computed.member,
         home: computed.home,
@@ -318,8 +368,9 @@ export default function App() {
         <SettingsView
           settings={settings}
           update={updateSettings}
-          homeChoices={homeChoices}
+          customizations={customizations}
           onRestore={restore}
+          onClearCustomization={(cid) => updateCustomization(cid, () => emptyCustomization())}
           vatspy={vatspy}
           vatspyError={vatspyError}
           onReloadVatspy={() => reloadVatspy(true)}
@@ -461,31 +512,64 @@ export default function App() {
                 </div>
               )}
 
+              {!isEmptyCustomization(customizations[data.cid]) && (
+                <div className="notice notice-accent">
+                  Changes saved for CID {data.cid} only: {describeCustomization(customizations[data.cid])}.{' '}
+                  {(customizations[data.cid].facilities.length > 0 || Object.keys(customizations[data.cid].requirements).length > 0) && (
+                    <>
+                      <button
+                        className="btn-link"
+                        onClick={() => {
+                          const c = customizations[data.cid];
+                          updateSettings((s) => applyCustomization(s, { facilities: c.facilities, requirements: c.requirements }));
+                          updateCustomization(data.cid, (prev) => ({ ...emptyCustomization(), ...(prev.home ? { home: prev.home } : {}) }));
+                        }}
+                      >
+                        Use them for every CID
+                      </button>
+                      {' · '}
+                    </>
+                  )}
+                  <button
+                    className="btn-link"
+                    onClick={() => {
+                      if (window.confirm(`Reset the changes saved for CID ${data.cid}?`)) updateCustomization(data.cid, () => emptyCustomization());
+                    }}
+                  >
+                    Reset
+                  </button>
+                </div>
+              )}
+
               <ReportView
                 reports={computed.reports}
                 currentKey={quarters[0].key}
-                requirements={settings.requirements}
+                requirements={computed.cidSettings.requirements}
+                customFacilities={(customizations[data.cid]?.facilities ?? []).filter((f) => f.alwaysShow).map((f) => f.code)}
+                onRemoveCustomFacility={(code) =>
+                  updateCustomization(data.cid, (c) => ({ ...c, facilities: c.facilities.filter((f) => f.code !== code) }))
+                }
                 home={computed.home}
                 onSetHome={(code) => chooseHome(data.cid, code)}
                 onResetHome={() => chooseHome(data.cid, null)}
                 onSetRequirement={(code, h) =>
-                  updateSettings((s) => {
-                    const requirements = { ...s.requirements };
-                    if (h == null || h === s.defaultRequirement) delete requirements[code];
+                  updateCustomization(data.cid, (c) => {
+                    const requirements = { ...c.requirements };
+                    if (h == null || h === (settings.requirements[code] ?? settings.defaultRequirement)) delete requirements[code];
                     else requirements[code] = h;
-                    return { ...s, requirements };
+                    return { ...c, requirements };
                   })
                 }
                 codeInfo={codeInfo}
                 onAssign={(a) =>
-                  updateSettings((s) =>
+                  updateCustomization(data.cid, (c) =>
                     a.values.reduce(
                       (acc, v) => (a.kind === 'pattern' ? assignPattern(acc, v, a.facility, a.name) : assignInclude(acc, v, a.facility, a.name)),
-                      s,
+                      c,
                     ),
                   )
                 }
-                onAddFacility={(f) => updateSettings((s) => addFacility(s, { ...f, alwaysShow: true }))}
+                onAddFacility={(f) => updateCustomization(data.cid, (c) => addFacility(c, { ...f, alwaysShow: true }))}
                 onSaveAutoFacility={() => {
                   const auto = computed.autoFacility;
                   if (auto) updateSettings((s) => addFacility(s, { ...auto, alwaysShow: false }));

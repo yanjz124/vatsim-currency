@@ -48,6 +48,9 @@ interface Props {
   onAddFacility(f: NewFacility): void;
   /** Copy a home facility built from VATSIM data into Settings. */
   onSaveAutoFacility(): void;
+  /** Facilities added for this CID only, which can be removed from their row. */
+  customFacilities: string[];
+  onRemoveCustomFacility(code: string): void;
 }
 
 const CODE_HELP = 'Facility codes use letters, digits, - and _, for example KZNY or VATSSA.';
@@ -254,7 +257,12 @@ function Facilities({
   onSetHome,
   onSetRequirement,
   onAddFacility,
-}: { report: QuarterReport } & Pick<Props, 'requirements' | 'codeInfo' | 'onSetHome' | 'onSetRequirement' | 'onAddFacility'>) {
+  customFacilities,
+  onRemoveCustomFacility,
+}: { report: QuarterReport } & Pick<
+  Props,
+  'requirements' | 'codeInfo' | 'onSetHome' | 'onSetRequirement' | 'onAddFacility' | 'customFacilities' | 'onRemoveCustomFacility'
+>) {
   return (
     <section>
       <h2 className="section-title">By facility</h2>
@@ -284,6 +292,7 @@ function Facilities({
                   custom={f.code in requirements}
                   onSetHome={onSetHome}
                   onSetRequirement={onSetRequirement}
+                  onRemove={customFacilities.includes(f.code) && f.hours === 0 ? () => onRemoveCustomFacility(f.code) : undefined}
                 />
               ))}
             </tbody>
@@ -406,7 +415,7 @@ function AddFacilityForm({ codeInfo, onAdd }: { codeInfo: CodeInfo; onAdd(f: New
         <p className="f6 color-fg-muted mt-2 mb-0">
           {c && info?.known ? `Adds ${c}${info.name ? ` ${info.name}` : ''}. ` : c ? `Creates facility ${c}. ` : ''}
           Callsign patterns take <span className="text-mono">*</span> wildcards. Leave both lists empty for a facility VATSpy already knows.
-          It stays listed, even with no hours, until you remove it in Settings.
+          It's saved for this CID only and stays listed, even with no hours, until you remove it.
         </p>
         {problem && <p className="f6 color-fg-danger mt-1 mb-0">{problem}</p>}
       </div>
@@ -419,11 +428,14 @@ function FacilityRow({
   custom,
   onSetHome,
   onSetRequirement,
+  onRemove,
 }: {
   f: FacilityStat;
   custom: boolean;
   onSetHome(code: string): void;
   onSetRequirement(code: string, hours: number | null): void;
+  /** Present for a facility added for this CID only. */
+  onRemove?: () => void;
 }) {
   const unknown = f.code === UNKNOWN;
   return (
@@ -432,6 +444,14 @@ function FacilityRow({
         <span className="code">{f.code}</span>
         {f.name && <span className="color-fg-muted"> {f.name}</span>}
         {f.isVisiting && <span className="f6 color-fg-muted"> · visiting</span>}
+        {onRemove && (
+          <>
+            {' '}
+            <button className="btn-link f6" onClick={onRemove} title="Added for this CID only">
+              remove
+            </button>
+          </>
+        )}
       </td>
       {LEVELS.map((l) => (
         <td key={l} className={f.levels[l] ? 'num' : 'num color-fg-subtle'}>

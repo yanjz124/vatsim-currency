@@ -115,6 +115,10 @@
   background: var(--bgColor-attention-muted);
   border-color: var(--borderColor-attention-muted);
 }
+.notice-accent {
+  background: var(--bgColor-accent-muted);
+  border-color: var(--borderColor-accent-muted);
+}
 
 /* Bordered container (after Primer's Box) */
 .panel {

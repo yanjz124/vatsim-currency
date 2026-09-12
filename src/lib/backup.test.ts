@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeSettingsLink, encodeSettingsLink, makeBackup, parseBackup } from './backup';
-import { DEFAULT_SETTINGS, type Settings } from './settings';
+import { DEFAULT_SETTINGS, type CidCustomization, type Settings } from './settings';
 
 const settings: Settings = {
   ...DEFAULT_SETTINGS,
@@ -9,16 +9,29 @@ const settings: Settings = {
   positionRules: [{ id: 'r', name: 'Center', patterns: ['DC_*_CTR'], hours: 2, countsTowardFacility: false }],
 };
 
+const customizations: Record<string, CidCustomization> = {
+  '1340265': {
+    home: 'KZDC',
+    facilities: [{ id: 'n', code: 'KZNY', name: '', patterns: [], includes: [], alwaysShow: true }],
+    requirements: { KZTL: 2 },
+  },
+};
+
 describe('settings backup', () => {
-  it('round-trips a backup file with home picks', () => {
-    const restored = parseBackup(JSON.parse(JSON.stringify(makeBackup(settings, { '1340265': 'kzdc', nope: 'X' }))));
+  it('round-trips a backup file with per-CID changes', () => {
+    const restored = parseBackup(JSON.parse(JSON.stringify(makeBackup(settings, { ...customizations, nope: { facilities: [], requirements: {} } }))));
     expect(restored.settings).toEqual(settings);
-    expect(restored.homeChoices).toEqual({ '1340265': 'KZDC' });
+    expect(restored.customizations).toEqual(customizations);
+  });
+
+  it('turns version 1 home picks into per-CID changes', () => {
+    const v1 = { app: 'vatsim-atc-currency', kind: 'settings', version: 1, settings, homeChoices: { '1340265': 'kzdc', bad: 'X' } };
+    expect(parseBackup(v1).customizations).toEqual({ '1340265': { home: 'KZDC', facilities: [], requirements: {} } });
   });
 
   it('accepts a bare settings object from older exports', () => {
     const r = parseBackup({ version: 1, overrides: [{ kind: 'prefix', match: 'PCT', facility: 'KZDC' }] });
-    expect(r.homeChoices).toBeNull();
+    expect(r.customizations).toBeNull();
     expect(r.settings.facilities.find((f) => f.code === 'KZDC')?.patterns).toEqual(['PCT_*']);
   });
 
