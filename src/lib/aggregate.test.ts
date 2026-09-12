@@ -3,7 +3,10 @@ import {
   buildReport,
   compileRules,
   describeResolution,
+  extraHomeHoursNeeded,
   groupFacility,
+  homeHoursRequired,
+  hoursElsewhereAllowed,
   parseCallsign,
   prefixCandidates,
   resolveFacility,
@@ -148,6 +151,36 @@ describe('user-defined facilities', () => {
   });
 });
 
+describe('50% + 1', () => {
+  it('needs half the total, rounded up to the next whole hour', () => {
+    expect(homeHoursRequired(59.06)).toBe(30);
+    expect(homeHoursRequired(60)).toBe(31);
+    expect(homeHoursRequired(0.1 + 0.2 + 59.7)).toBe(31); // float noise around exactly 60
+    expect(homeHoursRequired(1.2)).toBe(1);
+    expect(homeHoursRequired(0)).toBe(0);
+  });
+
+  it('works out the extra home time needed and the time left for elsewhere', () => {
+    expect(extraHomeHoursNeeded(28.44, 59.06)).toBeCloseTo(2.56);
+    expect(extraHomeHoursNeeded(30, 60)).toBeCloseTo(1);
+    expect(extraHomeHoursNeeded(31, 60)).toBe(0);
+    expect(hoursElsewhereAllowed(34.46, 53.63)).toBeCloseTo(14.37);
+    expect(hoursElsewhereAllowed(20, 60)).toBe(0);
+
+    // Check against the rule itself: x meets it, and a little less than x doesn't.
+    for (const [home, total] of [[28.44, 59.06], [3, 10], [12.3, 40], [0, 5], [30, 60]]) {
+      const x = extraHomeHoursNeeded(home, total);
+      expect(home + x).toBeGreaterThanOrEqual(homeHoursRequired(total + x) - 1e-9);
+      expect(home + x - 0.01).toBeLessThan(homeHoursRequired(total + x - 0.01));
+    }
+    for (const [home, total] of [[34.46, 53.63], [6.5, 10], [31, 60]]) {
+      const y = hoursElsewhereAllowed(home, total);
+      expect(home).toBeGreaterThanOrEqual(homeHoursRequired(total + y - 0.01));
+      expect(home).toBeLessThan(homeHoursRequired(total + y));
+    }
+  });
+});
+
 describe('quarters', () => {
   it('normalises quarter arithmetic across years', () => {
     expect(makeQuarter(2026, 0).label).toBe('Q4 2025');
@@ -230,15 +263,15 @@ describe('buildReport', () => {
 
   it('applies the 50% + 1 rule', () => {
     const r = buildReport(sessions, q3, vatspy, settings, ctx);
-    // 6.5 home of 10 total
-    expect(r.home).toMatchObject({ facility: 'KZDC', meets: true });
+    // 6.5 home of 10 total; the rule needs 6
+    expect(r.home).toMatchObject({ facility: 'KZDC', meets: true, required: 6 });
     expect(r.home!.share).toBeCloseTo(0.65);
-    expect(r.home!.headroomElsewhere).toBeCloseTo(3);
+    expect(r.home!.headroomElsewhere).toBeCloseTo(2); // 12 total would need 7
     expect(r.home!.neededAtHome).toBe(0);
 
     const away = buildReport(sessions, q3, vatspy, settings, { home: 'EGTT' });
-    expect(away.home).toMatchObject({ meets: false });
-    expect(away.home!.neededAtHome).toBeCloseTo(4); // 10 - 2*3
+    expect(away.home).toMatchObject({ meets: false, required: 6 });
+    expect(away.home!.neededAtHome).toBeCloseTo(5); // 8 of 15 meets; 7 of 14 doesn't
     expect(buildReport(sessions, q3, vatspy, settings).home).toBeNull();
   });
 

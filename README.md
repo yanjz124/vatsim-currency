@@ -67,7 +67,7 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
   5. the facility with the most hours
 - **Listed facilities**: facilities with hours, plus the home facility, VATUSA visiting facilities and facilities marked "Always list", even with no hours. A facility's own requirement applies to every member, but doesn't make it appear for members with no hours there.
 - **Position requirements**: rules with callsign patterns, optional required hours per quarter, and a "Counts toward facility" switch. A rule with hours gets its own currency check. Hours from a rule that doesn't count toward the facility are left out of that facility's requirement, but still count toward total hours and the 50% + 1 rule.
-- **50% + 1**: met when home hours are more than half of all counted hours in the quarter across the network. Exactly 50% does not meet it. The report shows how many more home hours are needed, or how many can still be controlled elsewhere.
+- **50% + 1**: home hours must reach half of all counted hours in the quarter across the network, rounded up to the next whole hour. 59.06 h in total needs 30 h at home, and 60 h needs 31, so breaking even isn't enough. The report shows how many more home hours are needed (each extra hour also raises the total), or how many can still be controlled elsewhere.
 
 ## Settings backup
 

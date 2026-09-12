@@ -230,12 +230,37 @@ export interface HomeStatus {
   homeHours: number;
   total: number;
   share: number;
+  /** Home hours the rule needs: half the total, rounded up to the next whole hour. */
+  required: number;
   /** null when there is no counted activity at all. */
   meets: boolean | null;
-  /** Home must exceed this many additional hours (if everything else stays the same). */
+  /** Extra home hours that would meet the rule, if nothing else changes. */
   neededAtHome: number;
-  /** Hours that can still be controlled elsewhere while staying above 50%. */
+  /** The rule stays met while less than this many more hours are controlled elsewhere. */
   headroomElsewhere: number;
+}
+
+const EPS = 1e-9;
+
+/** 50% + 1: half of the total, rounded up to the next whole hour. Exactly half isn't enough (60 h needs 31). */
+export function homeHoursRequired(total: number): number {
+  return total > EPS ? Math.floor(total / 2 + EPS) + 1 : 0;
+}
+
+/** Least extra time at home that meets 50% + 1, with no more time elsewhere. */
+export function extraHomeHoursNeeded(home: number, total: number): number {
+  if (home >= homeHoursRequired(total) - EPS) return 0;
+  // Each hour added at home also adds to the total, raising the requirement by an hour for every two
+  // added. Within requirement step k (total + x in [2k, 2k + 2)), home + x needs to reach k + 1.
+  for (let k = Math.floor(total / 2 + EPS); ; k++) {
+    const x = Math.max(0, 2 * k - total, k + 1 - home);
+    if (x < 2 * k + 2 - total - EPS) return x;
+  }
+}
+
+/** The rule stays met while less than this many more hours are controlled elsewhere. */
+export function hoursElsewhereAllowed(home: number, total: number): number {
+  return Math.max(0, 2 * Math.floor(home + EPS) - total);
 }
 
 export interface ExcludedStat {
@@ -463,15 +488,17 @@ export function buildReport(
   let homeStatus: HomeStatus | null = null;
   if (home) {
     const hf = facilities.get(home)!;
+    const required = homeHoursRequired(total);
     homeStatus = {
       facility: hf.code,
       name: hf.name,
       homeHours: hf.hours,
       total,
       share: total > 0 ? hf.hours / total : 0,
-      meets: total > 0 ? hf.hours > total / 2 : null,
-      neededAtHome: Math.max(0, total - 2 * hf.hours),
-      headroomElsewhere: Math.max(0, 2 * hf.hours - total),
+      required,
+      meets: total > 0 ? hf.hours >= required - EPS : null,
+      neededAtHome: extraHomeHoursNeeded(hf.hours, total),
+      headroomElsewhere: hoursElsewhereAllowed(hf.hours, total),
     };
   }
 

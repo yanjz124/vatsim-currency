@@ -138,13 +138,13 @@ function Comparison({ reports, label }: { reports: QuarterReport[]; label: (r: Q
           )}
           {home && (
             <tr>
-              <th scope="row">Share at {home.facility} (50% + 1)</th>
+              <th scope="row">Hours at {home.facility} (50% + 1)</th>
               {reports.map((r) => (
                 <td key={r.quarter.key} className="num">
                   {r.home && r.home.meets !== null ? (
-                    <>
-                      {fmt.pct(r.home.share)} <RuleMark meets={r.home.meets} />
-                    </>
+                    <span title={`${fmt.pct(r.home.share)} of ${fmt.hours(r.home.total)} h`}>
+                      {fmt.hours(r.home.homeHours)} of {r.home.required} h <RuleMark meets={r.home.meets} />
+                    </span>
                   ) : (
                     <span className="color-fg-muted">no activity</span>
                   )}
@@ -219,10 +219,11 @@ function HomeRule({
         <>
           <div className="share" aria-hidden>
             <div className={h.meets ? 'share-fill meets' : 'share-fill short'} style={{ width: `${Math.min(100, h.share * 100)}%` }} />
-            <div className="share-mid" />
+            <div className="share-mid" style={{ left: `${Math.min(100, (h.required / h.total) * 100)}%` }} />
           </div>
           <p>
-            {fmt.hours(h.homeHours)} of {fmt.hours(h.total)} hours ({fmt.pct(h.share)}) in {q} were at {h.facility}.{' '}
+            {fmt.hours(h.homeHours)} of {fmt.hours(h.total)} hours ({fmt.pct(h.share)}) in {q} were at {h.facility}. The rule needs{' '}
+            {h.required} h there: half of {fmt.hours(h.total)}, rounded up to the next whole hour.{' '}
             {h.meets ? (
               <>
                 <span className="color-fg-success text-bold">Meets the rule.</span>{' '}
@@ -235,7 +236,7 @@ function HomeRule({
               <>
                 <span className="color-fg-danger text-bold">Does not meet the rule.</span>{' '}
                 <span className="color-fg-muted">
-                  Needs more than {fmt.hours(h.neededAtHome)} additional hours at {h.facility}, assuming no more time elsewhere.
+                  Needs {fmt.hours(h.neededAtHome)} more hours at {h.facility}, assuming no more time elsewhere.
                 </span>
               </>
             )}

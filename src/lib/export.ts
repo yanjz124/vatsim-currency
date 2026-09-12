@@ -85,7 +85,8 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
       ...LEVELS,
       'Home hours',
       'Home share',
-      'Home > 50%',
+      'Home hours needed (50% + 1)',
+      'Meets 50% + 1',
       'Facilities meeting requirement',
       'Position requirements met',
     ],
@@ -102,12 +103,13 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
       ...LEVELS.map((l) => num(r.levels[l])),
       r.home ? num(r.home.homeHours) : '',
       r.home ? num(r.home.share, PCT) : '',
+      r.home ? r.home.required : '',
       r.home ? (r.home.meets == null ? 'No activity' : yesNo(r.home.meets)) : '',
       `${listed.filter((f) => f.meets).length} of ${listed.length}`,
       required.length ? `${required.filter((p) => p.meets).length} of ${required.length}` : '',
     ]);
   }
-  sheet('Summary', summary, [32, 20, 20, 14, 10, 10, 10, 10, 13, 10, 12, 12, 12, 28, 24]);
+  sheet('Summary', summary, [32, 20, 20, 14, 10, 10, 10, 10, 13, 10, 12, 12, 16, 14, 28, 24]);
 
   // Facilities
   const facRows: Cell[][] = [
