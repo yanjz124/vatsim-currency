@@ -15,7 +15,8 @@ import { ALL_SUFFIXES } from '../src/lib/settings';
 import { VATSPY_URL, parseVatspy } from '../src/lib/vatspy';
 
 const OUT = process.argv[2] ?? 'probe-results.json';
-const MEMBER_GAP_MS = 6_500;
+// VATSIM allows 10 member lookups a minute per IP and answers bursts with a ~3 minute 429, so stay well under.
+const MEMBER_GAP_MS = 8_000;
 const FEED_EVERY_MS = 120_000;
 const TARGET_OBSERVATIONS = 3;
 const STOP_AFTER = Number(process.env.STOP_AFTER ?? 80);
@@ -43,9 +44,23 @@ for (const o of state.observations) {
   pairs.add(`${o.division}/${o.subdivision}`);
 }
 
+/** fetch that retries network failures (timeouts, resets) with a growing wait instead of throwing. */
+async function fetchRetry(url: string, init?: RequestInit): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) });
+    } catch (err) {
+      if (attempt >= 8) throw err;
+      const wait = Math.min(15_000 * attempt, 120_000);
+      log(`network error (${(err as Error).message}), retrying in ${wait / 1000} s`);
+      await sleep(wait);
+    }
+  }
+}
+
 async function member(cid: string): Promise<{ division: string | null; subdivision: string | null } | null> {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const res = await fetch(`https://api.vatsim.net/v2/members/${cid}`, { headers: { Accept: 'application/json' } });
+    const res = await fetchRetry(`https://api.vatsim.net/v2/members/${cid}`, { headers: { Accept: 'application/json' } });
     if (res.status === 429) {
       const wait = Number(res.headers.get('Retry-After')) * 1000 || 60_000;
       log(`429, waiting ${Math.round(wait / 1000)} s`);
@@ -60,7 +75,7 @@ async function member(cid: string): Promise<{ division: string | null; subdivisi
 }
 
 const started = Date.now();
-const vatspy = parseVatspy(await (await fetch(VATSPY_URL)).text());
+const vatspy = parseVatspy(await (await fetchRetry(VATSPY_URL)).text());
 const rules = compileRules({ facilities: [] });
 log(`VATSpy loaded; resuming with ${state.observations.length} observations, ${perFacility.size} facilities`);
 
@@ -81,7 +96,7 @@ while (true) {
 
   if (Date.now() - lastFeed > FEED_EVERY_MS || !queue.length) {
     if (!queue.length && lastFeed && Date.now() - lastFeed < FEED_EVERY_MS) await sleep(FEED_EVERY_MS - (Date.now() - lastFeed));
-    const feed = (await (await fetch('https://data.vatsim.net/v3/vatsim-data.json')).json()) as {
+    const feed = (await (await fetchRetry('https://data.vatsim.net/v3/vatsim-data.json')).json()) as {
       controllers: { cid: number; callsign: string; facility: number }[];
     };
     lastFeed = Date.now();

@@ -660,5 +660,326 @@
    "division": "WA"
   }
  ],
- "facilities": {}
+ "facilities": {
+  "BIRD": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 3
+  },
+  "CZVR": {
+   "division": "CAN",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "DAAA": {
+   "division": "MENA",
+   "subdivision": "MAG",
+   "controllers": 3
+  },
+  "DTTC": {
+   "division": "MENA",
+   "subdivision": "MAG",
+   "controllers": 3
+  },
+  "EBBU": {
+   "division": "EUD",
+   "subdivision": "BLUX",
+   "controllers": 3
+  },
+  "EDGG": {
+   "division": "EUD",
+   "subdivision": "GER",
+   "controllers": 3
+  },
+  "EDMM": {
+   "division": "EUD",
+   "subdivision": "GER",
+   "controllers": 3
+  },
+  "EDWW": {
+   "division": "EUD",
+   "subdivision": "GER",
+   "controllers": 3
+  },
+  "EDWW-ALR": {
+   "division": "EUD",
+   "subdivision": "GER",
+   "controllers": 2
+  },
+  "EETT": {
+   "division": "EUD",
+   "subdivision": "ESTN",
+   "controllers": 2
+  },
+  "EFIN": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 3
+  },
+  "EGPX": {
+   "division": "GBR",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "EGTT": {
+   "division": "GBR",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "EHAA": {
+   "division": "EUD",
+   "subdivision": "NETH",
+   "controllers": 3
+  },
+  "EISN": {
+   "division": "EUD",
+   "subdivision": "IRL",
+   "controllers": 3
+  },
+  "EKDK": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 2
+  },
+  "EPWW": {
+   "division": "EUD",
+   "subdivision": "POL",
+   "controllers": 3
+  },
+  "ESMM": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 2
+  },
+  "EVRR": {
+   "division": "EUD",
+   "subdivision": "LATVIA",
+   "controllers": 3
+  },
+  "FACA": {
+   "division": "SSA",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "FASA": {
+   "division": "SSA",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "HECC": {
+   "division": "MENA",
+   "subdivision": "EGYPT",
+   "controllers": 3
+  },
+  "KZAU": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "KZBW": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZDC": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZLA": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZLC": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZME": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZNY": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZSE": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZTL": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "LECB": {
+   "division": "EUD",
+   "subdivision": "SPN",
+   "controllers": 3
+  },
+  "LECM": {
+   "division": "EUD",
+   "subdivision": "SPN",
+   "controllers": 3
+  },
+  "LGGG": {
+   "division": "EUD",
+   "subdivision": "GRE",
+   "controllers": 3
+  },
+  "LHCC": {
+   "division": "EUD",
+   "subdivision": "HUN",
+   "controllers": 3
+  },
+  "LIMM": {
+   "division": "EUD",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "LLLL": {
+   "division": "IL",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "LMMM": {
+   "division": "EUD",
+   "subdivision": "ITA",
+   "controllers": 3
+  },
+  "LOVV": {
+   "division": "EUD",
+   "subdivision": "AUST",
+   "controllers": 3
+  },
+  "LPPC": {
+   "division": "EUD",
+   "subdivision": "POR",
+   "controllers": 3
+  },
+  "LRBB": {
+   "division": "EUD",
+   "subdivision": "ROM",
+   "controllers": 3
+  },
+  "LTAA": {
+   "division": "EUD",
+   "subdivision": "TURK",
+   "controllers": 3
+  },
+  "LYBA": {
+   "division": "EUD",
+   "subdivision": "ADRIA",
+   "controllers": 3
+  },
+  "OBBB": {
+   "division": "MENA",
+   "subdivision": "KHLJ",
+   "controllers": 3
+  },
+  "OEJD": {
+   "division": "MENA",
+   "subdivision": "SAU",
+   "controllers": 3
+  },
+  "OIIX": {
+   "division": "MENA",
+   "subdivision": "IRN",
+   "controllers": 3
+  },
+  "OJAC": {
+   "division": "MENA",
+   "subdivision": "JOR",
+   "controllers": 3
+  },
+  "OKAC": {
+   "division": "MENA",
+   "subdivision": "KWIQ",
+   "controllers": 3
+  },
+  "OMAE": {
+   "division": "MENA",
+   "subdivision": "ARB",
+   "controllers": 3
+  },
+  "OOMM": {
+   "division": "MENA",
+   "subdivision": "ARB",
+   "controllers": 3
+  },
+  "OPKR": {
+   "division": "WA",
+   "subdivision": "PAK",
+   "controllers": 2
+  },
+  "PAZA": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "RPHI": {
+   "division": "SEA",
+   "subdivision": "PHL",
+   "controllers": 3
+  },
+  "SAEF": {
+   "division": "SAM",
+   "subdivision": "ARG",
+   "controllers": 3
+  },
+  "SBBS": {
+   "division": "BRZ",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "SPIM": {
+   "division": "SAM",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "TJZS": {
+   "division": "CAR",
+   "subdivision": "CUR",
+   "controllers": 3
+  },
+  "ULLL": {
+   "division": "RUS",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "UNNT": {
+   "division": "RUS",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "UUWV": {
+   "division": "RUS",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "UWWW": {
+   "division": "RUS",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "WBFC": {
+   "division": "SEA",
+   "subdivision": "MYS",
+   "controllers": 3
+  },
+  "WSJC": {
+   "division": "SEA",
+   "subdivision": "SING",
+   "controllers": 2
+  },
+  "ZSHA": {
+   "division": "PRC",
+   "subdivision": null,
+   "controllers": 3
+  }
+ }
 }
