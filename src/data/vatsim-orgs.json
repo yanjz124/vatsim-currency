@@ -666,7 +666,17 @@
    "subdivision": "SCA",
    "controllers": 3
   },
+  "CZEG": {
+   "division": "CAN",
+   "subdivision": null,
+   "controllers": 3
+  },
   "CZVR": {
+   "division": "CAN",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "CZYZ": {
    "division": "CAN",
    "subdivision": null,
    "controllers": 3
@@ -726,6 +736,11 @@
    "subdivision": null,
    "controllers": 3
   },
+  "EGTT-C": {
+   "division": "GBR",
+   "subdivision": null,
+   "controllers": 2
+  },
   "EHAA": {
    "division": "EUD",
    "subdivision": "NETH",
@@ -739,6 +754,21 @@
   "EKDK": {
    "division": "EUD",
    "subdivision": "SCA",
+   "controllers": 3
+  },
+  "ENOR-S": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 2
+  },
+  "ENOS": {
+   "division": "EUD",
+   "subdivision": "SCA",
+   "controllers": 2
+  },
+  "ENSV": {
+   "division": "EUD",
+   "subdivision": "SCA",
    "controllers": 2
   },
   "EPWW": {
@@ -749,7 +779,7 @@
   "ESMM": {
    "division": "EUD",
    "subdivision": "SCA",
-   "controllers": 2
+   "controllers": 3
   },
   "EVRR": {
    "division": "EUD",
@@ -757,6 +787,11 @@
    "controllers": 3
   },
   "FACA": {
+   "division": "SSA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "FAJA": {
    "division": "SSA",
    "subdivision": null,
    "controllers": 2
@@ -786,12 +821,37 @@
    "subdivision": null,
    "controllers": 3
   },
+  "KZDV": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZFW": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZID": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 2
+  },
+  "KZJX": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 2
+  },
   "KZLA": {
    "division": "USA",
    "subdivision": null,
    "controllers": 3
   },
   "KZLC": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZMA": {
    "division": "USA",
    "subdivision": null,
    "controllers": 3
@@ -806,6 +866,16 @@
    "subdivision": null,
    "controllers": 3
   },
+  "KZOA": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "KZOB": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 2
+  },
   "KZSE": {
    "division": "USA",
    "subdivision": null,
@@ -814,7 +884,7 @@
   "KZTL": {
    "division": "USA",
    "subdivision": null,
-   "controllers": 2
+   "controllers": 3
   },
   "LECB": {
    "division": "EUD",
@@ -825,6 +895,21 @@
    "division": "EUD",
    "subdivision": "SPN",
    "controllers": 3
+  },
+  "LFEE": {
+   "division": "EUD",
+   "subdivision": "SUI",
+   "controllers": 3
+  },
+  "LFFF": {
+   "division": "EUD",
+   "subdivision": "FRA",
+   "controllers": 3
+  },
+  "LFMM": {
+   "division": "EUD",
+   "subdivision": "FRA",
+   "controllers": 2
   },
   "LGGG": {
    "division": "EUD",
@@ -839,6 +924,11 @@
   "LIMM": {
    "division": "EUD",
    "subdivision": null,
+   "controllers": 2
+  },
+  "LKAA": {
+   "division": "EUD",
+   "subdivision": "CZCH",
    "controllers": 2
   },
   "LLLL": {
@@ -874,6 +964,11 @@
   "LYBA": {
    "division": "EUD",
    "subdivision": "ADRIA",
+   "controllers": 3
+  },
+  "MMEX": {
+   "division": "MCO",
+   "subdivision": null,
    "controllers": 3
   },
   "OBBB": {
@@ -921,6 +1016,16 @@
    "subdivision": null,
    "controllers": 3
   },
+  "PHZH": {
+   "division": "USA",
+   "subdivision": null,
+   "controllers": 3
+  },
+  "RJTG": {
+   "division": "JPN",
+   "subdivision": null,
+   "controllers": 2
+  },
   "RPHI": {
    "division": "SEA",
    "subdivision": "PHL",
@@ -936,10 +1041,15 @@
    "subdivision": null,
    "controllers": 2
   },
-  "SPIM": {
-   "division": "SAM",
+  "SBCW": {
+   "division": "BRZ",
    "subdivision": null,
    "controllers": 2
+  },
+  "SPIM": {
+   "division": "SAM",
+   "subdivision": "PER",
+   "controllers": 3
   },
   "TJZS": {
    "division": "CAR",
@@ -974,6 +1084,11 @@
   "WSJC": {
    "division": "SEA",
    "subdivision": "SING",
+   "controllers": 2
+  },
+  "YGUN": {
+   "division": "PAC",
+   "subdivision": null,
    "controllers": 2
   },
   "ZSHA": {
