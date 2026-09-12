@@ -234,8 +234,10 @@ export default function App() {
     if (!data) return null;
     const info = member?.cid === data.cid ? member : null;
     const fromMember = memberFacilities(info, vatspy, settings);
+    // A home facility built from VATSIM data (e.g. CAN) groups the member's facilities for this report only.
+    const reportSettings = fromMember.autoFacility ? { ...settings, facilities: [...settings.facilities, fromMember.autoFacility] } : settings;
     const busiest = (q: Quarter) =>
-      buildReport(data.sessions, q, vatspy, settings).facilities.find((f) => f.code !== UNKNOWN && f.hours > 0)?.code;
+      buildReport(data.sessions, q, vatspy, reportSettings).facilities.find((f) => f.code !== UNKNOWN && f.hours > 0)?.code;
 
     const choice = homeChoices[data.cid];
     let home: HomeFacility | null = choice ? { code: choice, source: 'choice' } : fromMember.home;
@@ -245,8 +247,9 @@ export default function App() {
     }
     const ctx = { home: home?.code ?? null, visiting: fromMember.visiting };
     return {
-      reports: [buildReport(data.sessions, focus, vatspy, settings, ctx), buildReport(data.sessions, previous, vatspy, settings, ctx)],
+      reports: [buildReport(data.sessions, focus, vatspy, reportSettings, ctx), buildReport(data.sessions, previous, vatspy, reportSettings, ctx)],
       home,
+      autoFacility: fromMember.autoFacility,
       member: info,
       at: Date.now(),
     };
@@ -483,6 +486,10 @@ export default function App() {
                   )
                 }
                 onAddFacility={(f) => updateSettings((s) => addFacility(s, { ...f, alwaysShow: true }))}
+                onSaveAutoFacility={() => {
+                  const auto = computed.autoFacility;
+                  if (auto) updateSettings((s) => addFacility(s, { ...auto, alwaysShow: false }));
+                }}
               />
             </>
           )}

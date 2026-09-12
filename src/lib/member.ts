@@ -1,5 +1,6 @@
+import bundledOrgs from '../data/vatsim-orgs.json';
 import { compileRules, groupFacility } from './aggregate';
-import type { FetchMode, Settings } from './settings';
+import type { FacilityDef, FetchMode, Settings } from './settings';
 import { getItem, setItem } from './storage';
 import { ApiError, VATSIM_API, guardedGetJson, type FetchStatus } from './vatsimApi';
 import type { VatspyData } from './vatspy';
@@ -24,6 +25,57 @@ export type HomeSource = 'choice' | 'vatusa' | 'subdivision' | 'division' | 'hou
 export interface HomeFacility {
   code: string;
   source: HomeSource;
+  /** Set when the facility was built from VATSIM data rather than defined in Settings. */
+  auto?: { includes: string[] };
+}
+
+/** VATSIM divisions and subdivisions (src/data/vatsim-orgs.json, refreshed by scripts/update-vatsim-orgs.ts). */
+export interface OrgData {
+  divisions: { id: string; name: string; subdivisionsAllowed: boolean }[];
+  subdivisions: { id: string; name: string; division: string }[];
+  /** Facility code → the division/subdivision most of its probed controllers belong to. */
+  facilities: Record<string, { division: string; subdivision: string | null; controllers: number }>;
+}
+
+export const ORGS = bundledOrgs as OrgData;
+
+/**
+ * A facility standing for a VATSIM division or subdivision, built from published data instead of a
+ * hand-made list. It includes:
+ * - a FIR with the subdivision's code (CAN's ZYZ is CZYZ, USA's ZDC is KZDC)
+ * - the prefixes of the VATSpy country with the same name (Germany is ED*, ET*; "Brazil (VATBRZ)" is Brazil)
+ * - facilities whose controllers were found to belong to it (scripts/probe-divisions.ts)
+ */
+export function orgFacility(id: string, kind: 'division' | 'subdivision', vatspy: VatspyData, orgs: OrgData = ORGS): FacilityDef | null {
+  const unit = kind === 'division' ? orgs.divisions.find((d) => d.id === id) : orgs.subdivisions.find((s) => s.id === id);
+  const includes = new Set<string>();
+
+  if (kind === 'subdivision') {
+    const fir = [id, `K${id}`, `C${id}`, `P${id}`].find((c) => vatspy.firNames[c]);
+    if (fir) includes.add(fir);
+  }
+
+  // Try the name and any part in brackets: "Brazil (VATBRZ)" is Brazil, "Republic of China (Taiwan)" is Taiwan.
+  const [, outside = '', inside = ''] = /^(.*?)\s*(?:\((.*)\))?\s*$/.exec(unit?.name ?? '') ?? [];
+  const names = [outside, inside].map((n) => n.trim().toLowerCase()).filter(Boolean);
+  const country = Object.entries(vatspy.countries).find(([n]) => names.includes(n.toLowerCase()));
+  if (country) {
+    const otherPrefixes = Object.entries(vatspy.countries)
+      .filter(([n]) => n !== country[0])
+      .flatMap(([, prefixes]) => prefixes);
+    for (const p of country[1]) {
+      // A one-letter prefix (K, U) is only safe when no other country's codes start with that letter.
+      if (p.length === 1 && otherPrefixes.some((o) => o.startsWith(p))) continue;
+      includes.add(`${p}*`);
+    }
+  }
+
+  for (const [code, tag] of Object.entries(orgs.facilities)) {
+    if ((kind === 'division' ? tag.division : tag.subdivision) === id) includes.add(code);
+  }
+
+  if (!includes.size) return null;
+  return { id: `vatsim-${kind}-${id}`, code: id, name: unit?.name ?? id, patterns: [], includes: [...includes], alwaysShow: false };
 }
 
 export const HOME_SOURCE_TEXT: Record<HomeSource, string> = {
@@ -68,13 +120,26 @@ export function vatusaToVatspy(code: string, vatspy: VatspyData | null): string 
   return vatspy.firNames[fir] ? fir : null;
 }
 
-/** Home and visiting facilities implied by the member's records, in report facility codes. */
+export interface MemberFacilities {
+  home: HomeFacility | null;
+  visiting: string[];
+  /** Facility built from VATSIM data for the home division/subdivision; add it to the report's facilities. */
+  autoFacility: FacilityDef | null;
+}
+
+/**
+ * Home and visiting facilities implied by the member's records, in report facility codes. Home comes
+ * from, in order: the VATUSA roster, a facility defined in Settings with the subdivision or division
+ * code, then a facility built from VATSIM data for the subdivision (or the division, for members
+ * without one). US members are left to VATUSA, whose facilities aren't VATSIM subdivisions.
+ */
 export function memberFacilities(
   info: MemberInfo | null,
   vatspy: VatspyData | null,
   settings: Pick<Settings, 'facilities'>,
-): { home: HomeFacility | null; visiting: string[] } {
-  if (!info) return { home: null, visiting: [] };
+  orgs: OrgData = ORGS,
+): MemberFacilities {
+  if (!info) return { home: null, visiting: [], autoFacility: null };
   const rules = compileRules(settings);
   const fromVatusa = (code: string) => {
     const fir = vatusaToVatspy(code, vatspy);
@@ -83,13 +148,26 @@ export function memberFacilities(
 
   const visiting = [...new Set((info.vatusa?.visiting ?? []).map(fromVatusa).filter((c): c is string => !!c))];
   const vatusaHome = info.vatusa ? fromVatusa(info.vatusa.facility) : null;
-  if (vatusaHome) return { home: { code: vatusaHome, source: 'vatusa' }, visiting };
+  if (vatusaHome) return { home: { code: vatusaHome, source: 'vatusa' }, visiting, autoFacility: null };
 
   const defined = new Set(settings.facilities.map((f) => f.code));
   const { subdivision, division } = info.vatsim ?? {};
-  if (subdivision && defined.has(subdivision)) return { home: { code: subdivision, source: 'subdivision' }, visiting };
-  if (division && defined.has(division)) return { home: { code: division, source: 'division' }, visiting };
-  return { home: null, visiting };
+  if (subdivision && defined.has(subdivision)) return { home: { code: subdivision, source: 'subdivision' }, visiting, autoFacility: null };
+  if (division && defined.has(division)) return { home: { code: division, source: 'division' }, visiting, autoFacility: null };
+  if (!vatspy) return { home: null, visiting, autoFacility: null };
+
+  // A subdivision member belongs to the subdivision, not the whole division, so there's no fallback.
+  const auto = subdivision
+    ? orgFacility(subdivision, 'subdivision', vatspy, orgs)
+    : division && division !== 'USA'
+      ? orgFacility(division, 'division', vatspy, orgs)
+      : null;
+  if (!auto) return { home: null, visiting, autoFacility: null };
+  return {
+    home: { code: auto.code, source: subdivision ? 'subdivision' : 'division', auto: { includes: auto.includes } },
+    visiting,
+    autoFacility: auto,
+  };
 }
 
 export function getCachedMember(cid: string): Promise<MemberInfo | undefined> {

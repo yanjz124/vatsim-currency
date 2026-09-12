@@ -1,0 +1,664 @@
+{
+ "source": "VATSIM API /api/divisions/ and /api/subdivisions/; facility tags from scripts/probe-divisions.ts",
+ "updated": "2026-09-12",
+ "divisions": [
+  {
+   "id": "BRZ",
+   "name": "Brazil (VATBRZ)",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "CAM",
+   "name": "Central America",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "CAN",
+   "name": "Canada",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "CAR",
+   "name": "Caribbean",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "EUD",
+   "name": "Europe (except UK)",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "GBR",
+   "name": "United Kingdom",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "IL",
+   "name": "Israel (VATIL)",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "JPN",
+   "name": "Japan",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "KOR",
+   "name": "Korea",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "MCO",
+   "name": "Mexico",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "MENA",
+   "name": "Middle East and North Africa",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "NZ",
+   "name": "New Zealand (VATNZ)",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "PAC",
+   "name": "Australia (VATPAC)",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "PRC",
+   "name": "People's Republic of China",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "ROC",
+   "name": "Republic of China (Taiwan)",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "RUS",
+   "name": "Russia",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "SAM",
+   "name": "South America",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "SEA",
+   "name": "Southeast Asia (VATSEA)",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "SSA",
+   "name": "Sub-Sahara Africa",
+   "subdivisionsAllowed": true
+  },
+  {
+   "id": "USA",
+   "name": "United States",
+   "subdivisionsAllowed": false
+  },
+  {
+   "id": "WA",
+   "name": "West Asia",
+   "subdivisionsAllowed": true
+  }
+ ],
+ "subdivisions": [
+  {
+   "id": "ZEG",
+   "name": "Edmonton",
+   "division": "CAN"
+  },
+  {
+   "id": "ZQM",
+   "name": "Moncton",
+   "division": "CAN"
+  },
+  {
+   "id": "ZUL",
+   "name": "Montreal",
+   "division": "CAN"
+  },
+  {
+   "id": "ZVR",
+   "name": "Vancouver",
+   "division": "CAN"
+  },
+  {
+   "id": "ZWG",
+   "name": "Winnipeg",
+   "division": "CAN"
+  },
+  {
+   "id": "ZYZ",
+   "name": "Toronto",
+   "division": "CAN"
+  },
+  {
+   "id": "CUR",
+   "name": "Curaçao",
+   "division": "CAR"
+  },
+  {
+   "id": "HAV",
+   "name": "Havana",
+   "division": "CAR"
+  },
+  {
+   "id": "KIN",
+   "name": "Kingston",
+   "division": "CAR"
+  },
+  {
+   "id": "NAS",
+   "name": "Nassau",
+   "division": "CAR"
+  },
+  {
+   "id": "PAP",
+   "name": "Port-Au-Prince",
+   "division": "CAR"
+  },
+  {
+   "id": "PIA",
+   "name": "Piarco",
+   "division": "CAR"
+  },
+  {
+   "id": "SDO",
+   "name": "Santo Domingo",
+   "division": "CAR"
+  },
+  {
+   "id": "SJU",
+   "name": "San Juan",
+   "division": "CAR"
+  },
+  {
+   "id": "ADRIA",
+   "name": "Adria",
+   "division": "EUD"
+  },
+  {
+   "id": "AUST",
+   "name": "Austria",
+   "division": "EUD"
+  },
+  {
+   "id": "BLUX",
+   "name": "Belux",
+   "division": "EUD"
+  },
+  {
+   "id": "BULG",
+   "name": "Bulgaria",
+   "division": "EUD"
+  },
+  {
+   "id": "CYPR",
+   "name": "Cyprus",
+   "division": "EUD"
+  },
+  {
+   "id": "CZCH",
+   "name": "Czech Republic",
+   "division": "EUD"
+  },
+  {
+   "id": "ESTN",
+   "name": "Estonia",
+   "division": "EUD"
+  },
+  {
+   "id": "FINL",
+   "name": "Finland",
+   "division": "EUD"
+  },
+  {
+   "id": "FRA",
+   "name": "France",
+   "division": "EUD"
+  },
+  {
+   "id": "GEO",
+   "name": "Georgia",
+   "division": "EUD"
+  },
+  {
+   "id": "GER",
+   "name": "Germany",
+   "division": "EUD"
+  },
+  {
+   "id": "GRE",
+   "name": "Hellenic",
+   "division": "EUD"
+  },
+  {
+   "id": "HUN",
+   "name": "Hungary",
+   "division": "EUD"
+  },
+  {
+   "id": "ICL",
+   "name": "Iceland",
+   "division": "EUD"
+  },
+  {
+   "id": "IRL",
+   "name": "Ireland",
+   "division": "EUD"
+  },
+  {
+   "id": "ITA",
+   "name": "Italy",
+   "division": "EUD"
+  },
+  {
+   "id": "LATVIA",
+   "name": "Latvia",
+   "division": "EUD"
+  },
+  {
+   "id": "LITH",
+   "name": "Lithuania",
+   "division": "EUD"
+  },
+  {
+   "id": "MALT",
+   "name": "Malta",
+   "division": "EUD"
+  },
+  {
+   "id": "MLDV",
+   "name": "Moldova",
+   "division": "EUD"
+  },
+  {
+   "id": "NETH",
+   "name": "Dutch",
+   "division": "EUD"
+  },
+  {
+   "id": "POL",
+   "name": "Poland",
+   "division": "EUD"
+  },
+  {
+   "id": "POR",
+   "name": "Portugal",
+   "division": "EUD"
+  },
+  {
+   "id": "ROM",
+   "name": "Romania",
+   "division": "EUD"
+  },
+  {
+   "id": "SCA",
+   "name": "Scandinavia",
+   "division": "EUD"
+  },
+  {
+   "id": "SLO",
+   "name": "Slovak Republic",
+   "division": "EUD"
+  },
+  {
+   "id": "SPN",
+   "name": "Spain",
+   "division": "EUD"
+  },
+  {
+   "id": "SUI",
+   "name": "Switzerland",
+   "division": "EUD"
+  },
+  {
+   "id": "TURK",
+   "name": "Turkey",
+   "division": "EUD"
+  },
+  {
+   "id": "UKRA",
+   "name": "Ukraine",
+   "division": "EUD"
+  },
+  {
+   "id": "ARB",
+   "name": "Arabian",
+   "division": "MENA"
+  },
+  {
+   "id": "DZA",
+   "name": "Algeria",
+   "division": "MENA"
+  },
+  {
+   "id": "EGYPT",
+   "name": "Egypt",
+   "division": "MENA"
+  },
+  {
+   "id": "IRN",
+   "name": "Iran",
+   "division": "MENA"
+  },
+  {
+   "id": "JOR",
+   "name": "Jordan",
+   "division": "MENA"
+  },
+  {
+   "id": "KHLJ",
+   "name": "Khaleej",
+   "division": "MENA"
+  },
+  {
+   "id": "KWIQ",
+   "name": "Kuwait and Iraq",
+   "division": "MENA"
+  },
+  {
+   "id": "KWT",
+   "name": "Kuwait",
+   "division": "MENA"
+  },
+  {
+   "id": "LBY",
+   "name": "Libya",
+   "division": "MENA"
+  },
+  {
+   "id": "LEB",
+   "name": "Lebanon",
+   "division": "MENA"
+  },
+  {
+   "id": "LEV",
+   "name": "Levant vACC",
+   "division": "MENA"
+  },
+  {
+   "id": "MAG",
+   "name": "Maghreb",
+   "division": "MENA"
+  },
+  {
+   "id": "MAR",
+   "name": "Morocco",
+   "division": "MENA"
+  },
+  {
+   "id": "NEA",
+   "name": "North East Africa",
+   "division": "MENA"
+  },
+  {
+   "id": "SAU",
+   "name": "Saudi Arabia",
+   "division": "MENA"
+  },
+  {
+   "id": "SYR",
+   "name": "Syria",
+   "division": "MENA"
+  },
+  {
+   "id": "YEM",
+   "name": "Yemen",
+   "division": "MENA"
+  },
+  {
+   "id": "PYF",
+   "name": "French Polynesia",
+   "division": "PAC"
+  },
+  {
+   "id": "ARG",
+   "name": "Argentina",
+   "division": "SAM"
+  },
+  {
+   "id": "BOL",
+   "name": "Bolivia",
+   "division": "SAM"
+  },
+  {
+   "id": "CHI",
+   "name": "Chile",
+   "division": "SAM"
+  },
+  {
+   "id": "COL",
+   "name": "Colombia",
+   "division": "SAM"
+  },
+  {
+   "id": "ECU",
+   "name": "Ecuador",
+   "division": "SAM"
+  },
+  {
+   "id": "GUY",
+   "name": "Guyana Francesa/Inglesa o Surinám",
+   "division": "SAM"
+  },
+  {
+   "id": "PAR",
+   "name": "Paraguay",
+   "division": "SAM"
+  },
+  {
+   "id": "PER",
+   "name": "Perú",
+   "division": "SAM"
+  },
+  {
+   "id": "URU",
+   "name": "Uruguay",
+   "division": "SAM"
+  },
+  {
+   "id": "VEN",
+   "name": "Venezuela",
+   "division": "SAM"
+  },
+  {
+   "id": "HK",
+   "name": "Hong Kong",
+   "division": "SEA"
+  },
+  {
+   "id": "IDN",
+   "name": "Indonesia",
+   "division": "SEA"
+  },
+  {
+   "id": "MYR",
+   "name": "Burma (Myanmar)",
+   "division": "SEA"
+  },
+  {
+   "id": "MYS",
+   "name": "Malaysia",
+   "division": "SEA"
+  },
+  {
+   "id": "PHL",
+   "name": "Philippines",
+   "division": "SEA"
+  },
+  {
+   "id": "SING",
+   "name": "Singapore",
+   "division": "SEA"
+  },
+  {
+   "id": "THA",
+   "name": "Thailand",
+   "division": "SEA"
+  },
+  {
+   "id": "VCL",
+   "name": "Vietnam Cambodia Laos",
+   "division": "SEA"
+  },
+  {
+   "id": "PCF",
+   "name": "Pacific Control",
+   "division": "USA"
+  },
+  {
+   "id": "ZAB",
+   "name": "Albuquerque",
+   "division": "USA"
+  },
+  {
+   "id": "ZAU",
+   "name": "Chicago",
+   "division": "USA"
+  },
+  {
+   "id": "ZBW",
+   "name": "Boston",
+   "division": "USA"
+  },
+  {
+   "id": "ZDC",
+   "name": "Washington DC",
+   "division": "USA"
+  },
+  {
+   "id": "ZDV",
+   "name": "Denver",
+   "division": "USA"
+  },
+  {
+   "id": "ZFW",
+   "name": "Fort Worth",
+   "division": "USA"
+  },
+  {
+   "id": "ZHU",
+   "name": "Houston",
+   "division": "USA"
+  },
+  {
+   "id": "ZID",
+   "name": "Indianapolis",
+   "division": "USA"
+  },
+  {
+   "id": "ZJX",
+   "name": "Jacksonville",
+   "division": "USA"
+  },
+  {
+   "id": "ZKC",
+   "name": "Kansas City",
+   "division": "USA"
+  },
+  {
+   "id": "ZLA",
+   "name": "Los Angeles",
+   "division": "USA"
+  },
+  {
+   "id": "ZLC",
+   "name": "Salt Lake City",
+   "division": "USA"
+  },
+  {
+   "id": "ZMA",
+   "name": "Miami",
+   "division": "USA"
+  },
+  {
+   "id": "ZME",
+   "name": "Memphis",
+   "division": "USA"
+  },
+  {
+   "id": "ZMP",
+   "name": "Minneapolis",
+   "division": "USA"
+  },
+  {
+   "id": "ZNY",
+   "name": "New York",
+   "division": "USA"
+  },
+  {
+   "id": "ZOA",
+   "name": "Oakland",
+   "division": "USA"
+  },
+  {
+   "id": "ZOB",
+   "name": "Cleveland",
+   "division": "USA"
+  },
+  {
+   "id": "ZSE",
+   "name": "Seattle",
+   "division": "USA"
+  },
+  {
+   "id": "ZTL",
+   "name": "Atlanta",
+   "division": "USA"
+  },
+  {
+   "id": "AFG",
+   "name": "Afghanistan",
+   "division": "WA"
+  },
+  {
+   "id": "BGD",
+   "name": "Bangladesh",
+   "division": "WA"
+  },
+  {
+   "id": "BHU",
+   "name": "Bhutan",
+   "division": "WA"
+  },
+  {
+   "id": "IND",
+   "name": "India",
+   "division": "WA"
+  },
+  {
+   "id": "MDV",
+   "name": "Maldives",
+   "division": "WA"
+  },
+  {
+   "id": "NPL",
+   "name": "Nepal",
+   "division": "WA"
+  },
+  {
+   "id": "PAK",
+   "name": "Pakistan",
+   "division": "WA"
+  },
+  {
+   "id": "SLA",
+   "name": "Sri Lanka",
+   "division": "WA"
+  },
+  {
+   "id": "SRM",
+   "name": "Sri Lanka and Maldives",
+   "division": "WA"
+  }
+ ],
+ "facilities": {}
+}

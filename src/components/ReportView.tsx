@@ -46,6 +46,8 @@ interface Props {
   onAssign(a: Assignment): void;
   /** Define a facility (listed even without hours). */
   onAddFacility(f: NewFacility): void;
+  /** Copy a home facility built from VATSIM data into Settings. */
+  onSaveAutoFacility(): void;
 }
 
 const CODE_HELP = 'Facility codes use letters, digits, - and _, for example KZNY or VATSSA.';
@@ -68,7 +70,7 @@ export function ReportView(props: Props) {
         ))}
       </div>
 
-      <HomeRule report={r} home={props.home} onResetHome={props.onResetHome} />
+      <HomeRule report={r} home={props.home} onResetHome={props.onResetHome} onSaveAuto={props.onSaveAutoFacility} />
       <Facilities report={r} {...props} />
       <PositionRequirements report={r} />
       <Positions report={r} codeInfo={props.codeInfo} onAssign={props.onAssign} />
@@ -160,7 +162,17 @@ function RuleMark({ meets }: { meets: boolean }) {
   return meets ? <span className="color-fg-success">met</span> : <span className="color-fg-danger">not met</span>;
 }
 
-function HomeRule({ report, home, onResetHome }: { report: QuarterReport; home: HomeFacility | null; onResetHome(): void }) {
+function HomeRule({
+  report,
+  home,
+  onResetHome,
+  onSaveAuto,
+}: {
+  report: QuarterReport;
+  home: HomeFacility | null;
+  onResetHome(): void;
+  onSaveAuto(): void;
+}) {
   const h = report.home;
   const q = report.quarter.label;
   if (!h || !home) {
@@ -179,6 +191,20 @@ function HomeRule({ report, home, onResetHome }: { report: QuarterReport; home: 
       </h2>
       <p className="f6 color-fg-muted mb-2">
         Home facility from {HOME_SOURCE_TEXT[home.source]}.{' '}
+        {home.auto && (
+          <>
+            Built from VATSIM data, it covers{' '}
+            <span className="text-mono">
+              {home.auto.includes.slice(0, 10).join(', ')}
+              {home.auto.includes.length > 10 ? ` and ${home.auto.includes.length - 10} more` : ''}
+            </span>
+            .{' '}
+            <button className="btn-link" onClick={onSaveAuto}>
+              Save it to Settings
+            </button>{' '}
+            to change what it covers.{' '}
+          </>
+        )}
         {home.source === 'choice' ? (
           <button className="btn-link" onClick={onResetHome}>
             Use the default

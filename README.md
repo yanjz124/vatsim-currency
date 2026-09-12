@@ -61,9 +61,10 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
 - **VATPRC** ships as one facility (code `PRC`) that includes every prefix VATSpy lists for China. It can be edited or removed.
 - **Home facility**, chosen per CID in this order:
   1. the user's own pick for that CID, made in the report's Home column
-  2. the member's VATUSA home facility
-  3. their VATSIM subdivision, then division, if a facility with that code is defined (such as `PRC`)
-  4. the facility with the most hours
+  2. the member's VATUSA home facility (VATUSA facilities aren't VATSIM subdivisions)
+  3. a facility defined in Settings with their VATSIM subdivision or division code (such as `PRC`)
+  4. a facility built from VATSIM data for their subdivision, or their division if they have none (division USA is left to VATUSA). It includes a FIR with the subdivision's code (`ZYZ` → `CZYZ`), the VATSpy country with the same name (Canada → `CJ*`…`CZ*`, United Kingdom → `EG*`), and facilities tagged in [`src/data/vatsim-orgs.json`](src/data/vatsim-orgs.json). It groups the member's facilities for that report, and **Save it to Settings** turns it into an editable facility.
+  5. the facility with the most hours
 - **Listed facilities**: facilities with hours, plus the home facility, VATUSA visiting facilities and facilities marked "Always list", even with no hours. A facility's own requirement applies to every member, but doesn't make it appear for members with no hours there.
 - **Position requirements**: rules with callsign patterns, optional required hours per quarter, and a "Counts toward facility" switch. A rule with hours gets its own currency check. Hours from a rule that doesn't count toward the facility are left out of that facility's requirement, but still count toward total hours and the 50% + 1 rule.
 - **50% + 1**: met when home hours are more than half of all counted hours in the quarter across the network. Exactly 50% does not meet it. The report shows how many more home hours are needed, or how many can still be controlled elsewhere.
@@ -107,6 +108,17 @@ To make proxy mode the default, build with the Worker URL:
 ```bash
 VITE_PROXY_URL=https://vatsim-currency-proxy.<account>.workers.dev npm run build
 ```
+
+### VATSIM division data
+
+[`src/data/vatsim-orgs.json`](src/data/vatsim-orgs.json) holds VATSIM's division and subdivision lists, plus facility → division tags learned from real controllers:
+
+```bash
+npx tsx scripts/probe-divisions.ts probe-results.json      # look up online controllers' divisions (slow: VATSIM allows 10 lookups a minute)
+npx tsx scripts/update-vatsim-orgs.ts probe-results.json   # refresh the lists and tag facilities by majority vote
+```
+
+A facility is tagged only when at least two probed controllers agree and they are more than half of everyone seen there, so visiting controllers don't mislabel it.
 
 ### Deployment
 
