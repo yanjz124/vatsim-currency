@@ -476,7 +476,10 @@ export default function App() {
                 codeInfo={codeInfo}
                 onAssign={(a) =>
                   updateSettings((s) =>
-                    a.kind === 'pattern' ? assignPattern(s, a.value, a.facility, a.name) : assignInclude(s, a.value, a.facility, a.name),
+                    a.values.reduce(
+                      (acc, v) => (a.kind === 'pattern' ? assignPattern(acc, v, a.facility, a.name) : assignInclude(acc, v, a.facility, a.name)),
+                      s,
+                    ),
                   )
                 }
                 onAddFacility={(f) => updateSettings((s) => addFacility(s, { ...f, alwaysShow: true }))}

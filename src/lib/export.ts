@@ -150,25 +150,26 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
 
   // Positions
   const posRows: Cell[][] = [
-    ['Quarter', 'Callsign', 'Facility', 'Level', 'Suffix', 'Sessions', 'Hours', 'Matched by', 'Position rules', 'Counts toward facility currency'],
+    ['Quarter', 'Position', 'Callsigns', 'Facility', 'Level', 'Suffix', 'Sessions', 'Hours', 'Currency hours', 'Matched by', 'Position rules'],
   ];
   for (const r of reports) {
     for (const p of r.positions) {
       posRows.push([
         r.quarter.label,
-        p.callsign,
+        p.position,
+        p.callsigns.join(', '),
         p.facility,
         p.level,
         p.suffix,
         p.sessions,
         num(p.hours),
+        num(p.currencyHours),
         describeResolution(p.resolution),
         p.positionRules.join(', '),
-        yesNo(p.countsTowardFacility),
       ]);
     }
   }
-  sheet('Positions', posRows, [10, 16, 10, 13, 8, 9, 9, 40, 24, 16], 0);
+  sheet('Positions', posRows, [10, 14, 28, 10, 13, 8, 9, 9, 14, 40, 24], 0);
 
   // Position requirements
   if (settings.positionRules.length) {
@@ -200,6 +201,7 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
       'Quarter',
       'Session ID',
       'Callsign',
+      'Position',
       'Suffix',
       'Level',
       'Facility',
@@ -223,6 +225,7 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
         r.quarter.label,
         s.id,
         s.callsign,
+        d.position,
         d.suffix,
         d.level ?? '',
         d.resolution?.facility ?? '',
@@ -240,7 +243,7 @@ export async function exportWorkbook(input: ExportInput): Promise<void> {
       ]);
     }
   }
-  sheet('Sessions', sesRows, [10, 12, 16, 8, 13, 10, 34, 20, 20, 12, 15, 9, 26, 16, 20, 7, 12], 0);
+  sheet('Sessions', sesRows, [10, 12, 16, 12, 8, 13, 10, 34, 20, 20, 12, 15, 9, 26, 16, 20, 7, 12], 0);
 
   // Settings snapshot, readable and restorable (Settings → Import settings accepts this file).
   const setRows: Cell[][] = [['Facility', 'Name', 'Callsign patterns', 'Includes', 'Always listed']];

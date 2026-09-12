@@ -46,6 +46,7 @@ Member details are cached for 12 hours. The Worker caches responses at the edge 
 ## How hours are counted
 
 - **Counted positions**: callsigns ending in `CTR FSS APP DEP TWR GND DEL RMP RDO TMU FMP`, each of which can be switched off in Settings. OBS, ATIS, SUP and similar are listed under "Not counted".
+- **Positions** ignore middle segments: `TOR_AA_APP` and `TOR_AB_APP` both count as `TOR_APP`. Callsigns are still matched to facilities one by one, so variants that land in different facilities are listed separately.
 - **Quarter boundaries**: calendar quarters in UTC. By default a session that crosses a boundary is split, so each quarter gets the part inside it. Alternatively, the whole session can count in the quarter it started, as in `roster_audit.py`.
 - **Facility matching**: for a callsign such as `DC_32_CTR`, the first rule that matches wins:
   1. A **callsign pattern** on a facility defined in Settings. `*` matches anything (`DC_*`, `IAD_*_TWR`, `*_FSS`). A pattern without `*` matches that prefix (`PCT` covers `PCT_APP`) or the exact callsign. If several match, the one with the most literal characters wins, then the one listed first.

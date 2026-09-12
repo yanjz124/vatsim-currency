@@ -46,7 +46,12 @@ export function prefixCandidates(segments: string[]): string[] {
   return out;
 }
 
-export type ResolutionSource = 'custom' | 'fir' | 'airport' | 'lid' | 'inferred' | 'unknown';
+/** A position without its middle segments: TOR_AA_APP and TOR_AB_APP are both TOR_APP. */
+export function positionLabel(parsed: ParsedCallsign): string {
+  return `${parsed.segments[0]}_${parsed.suffix}`;
+}
+
+export type ResolutionSource ='custom' | 'fir' | 'airport' | 'lid' | 'inferred' | 'unknown';
 
 export interface Resolution {
   facility: string;
@@ -162,6 +167,8 @@ function autoResolve(parsed: ParsedCallsign, candidates: string[], vatspy: Vatsp
 
 export interface SessionDetail {
   session: Session;
+  /** Callsign without middle segments, e.g. TOR_APP */
+  position: string;
   suffix: string;
   level: Level | null;
   counted: boolean;
@@ -174,19 +181,25 @@ export interface SessionDetail {
   countsTowardFacility: boolean;
 }
 
+/** Sessions on one position (see positionLabel) at one facility. */
 export interface PositionStat {
-  callsign: string;
+  /** e.g. TOR_APP */
+  position: string;
+  /** Callsigns grouped into the position, most hours first. */
+  callsigns: string[];
+  /** First callsign segment, e.g. TOR */
+  prefix: string;
   facility: string;
   suffix: string;
   level: Level;
   hours: number;
   sessions: number;
+  /** How the first session's callsign was matched. */
   resolution: Resolution;
-  segments: string[];
-  /** Position rules the callsign matches. */
+  /** Position rules any of the callsigns match. */
   positionRules: string[];
-  /** False when a matching position rule leaves it out of facility currency. */
-  countsTowardFacility: boolean;
+  /** Hours that count toward the facility's currency (position rules can leave some out). */
+  currencyHours: number;
 }
 
 export type LevelHours = Record<Level, number>;
@@ -226,7 +239,9 @@ export interface HomeStatus {
 }
 
 export interface ExcludedStat {
-  callsign: string;
+  /** Grouped like positions, e.g. EGKK_ATIS */
+  position: string;
+  callsigns: string[];
   reason: string;
   hours: number;
   sessions: number;
@@ -282,7 +297,9 @@ export function buildReport(
   const counted = new Set(settings.countedSuffixes);
   const rules = compileRules(settings);
   const details: SessionDetail[] = [];
+  // Keyed by `${facility}|${position}`, so variants that resolve to different facilities stay apart.
   const positions = new Map<string, PositionStat>();
+  const callsignHours = new Map<string, Map<string, number>>();
   const excluded = new Map<string, ExcludedStat>();
   const resolutionCache = new Map<string, Resolution>();
 
@@ -304,8 +321,10 @@ export function buildReport(
     else if (!counted.has(suffix)) reason = `${suffix} not counted (Settings)`;
 
     if (reason || !parsed) {
+      const position = parsed ? positionLabel(parsed) : s.callsign;
       details.push({
         session: s,
+        position,
         suffix,
         level: null,
         counted: false,
@@ -315,10 +334,11 @@ export function buildReport(
         positionRules: [],
         countsTowardFacility: false,
       });
-      const ex = excluded.get(s.callsign) ?? { callsign: s.callsign, reason: reason!, hours: 0, sessions: 0 };
+      const ex = excluded.get(position) ?? { position, callsigns: [], reason: reason!, hours: 0, sessions: 0 };
       ex.hours += hours;
       ex.sessions++;
-      excluded.set(s.callsign, ex);
+      if (!ex.callsigns.includes(s.callsign)) ex.callsigns.push(s.callsign);
+      excluded.set(position, ex);
       continue;
     }
 
@@ -341,23 +361,38 @@ export function buildReport(
     const countsTowardFacility = matched.every((p) => p.rule.countsTowardFacility);
 
     const level = SUFFIX_LEVEL[suffix];
-    details.push({ session: s, suffix, level, counted: true, resolution, hours, positionRules: ruleNames, countsTowardFacility });
+    const position = positionLabel(parsed);
+    details.push({ session: s, position, suffix, level, counted: true, resolution, hours, positionRules: ruleNames, countsTowardFacility });
 
-    const pos = positions.get(s.callsign) ?? {
-      callsign: s.callsign,
-      facility: resolution.facility,
-      suffix,
-      level,
-      hours: 0,
-      sessions: 0,
-      resolution,
-      segments: parsed.segments,
-      positionRules: ruleNames,
-      countsTowardFacility,
-    };
+    const key = `${resolution.facility}|${position}`;
+    let pos = positions.get(key);
+    if (!pos) {
+      pos = {
+        position,
+        callsigns: [],
+        prefix: parsed.segments[0],
+        facility: resolution.facility,
+        suffix,
+        level,
+        hours: 0,
+        sessions: 0,
+        resolution,
+        positionRules: [],
+        currencyHours: 0,
+      };
+      positions.set(key, pos);
+    }
     pos.hours += hours;
     pos.sessions++;
-    positions.set(s.callsign, pos);
+    if (countsTowardFacility) pos.currencyHours += hours;
+    for (const name of ruleNames) if (!pos.positionRules.includes(name)) pos.positionRules.push(name);
+    const perCallsign = callsignHours.get(key) ?? new Map<string, number>();
+    perCallsign.set(s.callsign, (perCallsign.get(s.callsign) ?? 0) + hours);
+    callsignHours.set(key, perCallsign);
+  }
+
+  for (const [key, pos] of positions) {
+    pos.callsigns = [...callsignHours.get(key)!].sort((a, b) => b[1] - a[1]).map(([callsign]) => callsign);
   }
 
   const home = ctx.home || '';
@@ -400,7 +435,7 @@ export function buildReport(
   for (const p of positions.values()) {
     const f = ensureFacility(p.facility);
     f.hours += p.hours;
-    if (p.countsTowardFacility) f.currencyHours += p.hours;
+    f.currencyHours += p.currencyHours;
     f.levels[p.level] += p.hours;
     f.sessions += p.sessions;
     f.positions.push(p);

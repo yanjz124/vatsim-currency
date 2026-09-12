@@ -196,7 +196,7 @@ describe('buildReport', () => {
     const egtt = r.facilities.find((f) => f.code === 'EGTT')!;
     expect(egtt).toMatchObject({ requirement: 4, meets: false });
     expect(egtt.shortBy).toBeCloseTo(1);
-    expect(r.excluded.map((e) => e.callsign).sort()).toEqual(['DCA_ATIS', 'KDCA_OBS']);
+    expect(r.excluded.map((e) => e.position).sort()).toEqual(['DCA_ATIS', 'KDCA_OBS']);
   });
 
   it('sorts facilities by hours, not by home, with unknown last', () => {
@@ -285,7 +285,7 @@ describe('buildReport', () => {
     expect(zdc.hours).toBeCloseTo(6.5); // still in totals
     expect(zdc.currencyHours).toBeCloseTo(4.5); // DCA_GND left out of facility currency
     expect(r.home!.homeHours).toBeCloseTo(6.5); // and still in the 50% + 1 rule
-    expect(r.positions.find((p) => p.callsign === 'DCA_GND')).toMatchObject({ positionRules: ['DCA ground'], countsTowardFacility: false });
+    expect(r.positions.find((p) => p.position === 'DCA_GND')).toMatchObject({ positionRules: ['DCA ground'], currencyHours: 0 });
     expect(ruleLabel({ id: 'x', name: '', patterns: ['A_*', 'B_*'], hours: null, countsTowardFacility: true })).toBe('A_*, B_*');
   });
 
@@ -302,9 +302,39 @@ describe('buildReport', () => {
     expect(zdc.shortBy).toBeCloseTo(0.5);
   });
 
+  it('groups callsigns into positions, ignoring middle segments', () => {
+    const grouped = [
+      s('DCA_N_GND', q3.start + h(1), 1),
+      s('DCA_S_GND', q3.start + h(3), 2),
+      s('DCA_GND', q3.start + h(6), 0.5),
+      s('DCA_S_GND', q3.start + h(8), 1),
+      s('LON_S_CTR', q3.start + h(10), 1),
+      s('LON_CTR', q3.start + h(12), 1),
+      s('EGLL_N_ATIS', q3.start + h(14), 1),
+      s('EGLL_S_ATIS', q3.start + h(16), 1),
+    ];
+    const r = buildReport(
+      grouped,
+      q3,
+      vatspy,
+      { ...settings, positionRules: [{ id: 'n', name: 'North', patterns: ['DCA_N_*'], hours: null, countsTowardFacility: false }] },
+      ctx,
+    );
+    const dca = r.positions.filter((p) => p.position === 'DCA_GND');
+    expect(dca).toHaveLength(1);
+    expect(dca[0]).toMatchObject({ facility: 'KZDC', prefix: 'DCA', sessions: 4, callsigns: ['DCA_S_GND', 'DCA_N_GND', 'DCA_GND'], positionRules: ['North'] });
+    expect(dca[0].hours).toBeCloseTo(4.5);
+    expect(dca[0].currencyHours).toBeCloseTo(3.5); // DCA_N_GND is left out
+    expect(r.facilities.find((f) => f.code === 'KZDC')!.currencyHours).toBeCloseTo(3.5);
+    // Same label, different facilities: kept apart.
+    expect(r.positions.filter((p) => p.position === 'LON_CTR').map((p) => p.facility).sort()).toEqual(['EGTT', 'EGTT-S']);
+    expect(r.excluded).toMatchObject([{ position: 'EGLL_ATIS', callsigns: ['EGLL_N_ATIS', 'EGLL_S_ATIS'], sessions: 2 }]);
+    expect(r.details.find((d) => d.session.callsign === 'DCA_S_GND')?.position).toBe('DCA_GND');
+  });
+
   it('respects disabled suffixes', () => {
     const r = buildReport(sessions, q3, vatspy, { ...settings, countedSuffixes: ['CTR', 'APP', 'TWR'] });
     expect(r.facilities.find((f) => f.code === 'KZDC')!.hours).toBeCloseTo(4.5);
-    expect(r.excluded.find((e) => e.callsign === 'DCA_GND')?.reason).toMatch(/not counted/);
+    expect(r.excluded.find((e) => e.position === 'DCA_GND')?.reason).toMatch(/not counted/);
   });
 });

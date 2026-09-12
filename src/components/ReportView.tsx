@@ -3,7 +3,6 @@ import {
   LEVELS,
   UNKNOWN,
   describeResolution,
-  prefixCandidates,
   ruleLabel,
   type FacilityStat,
   type PositionStat,
@@ -13,10 +12,11 @@ import * as fmt from '../lib/format';
 import { HOME_SOURCE_TEXT, type HomeFacility } from '../lib/member';
 import { isValidFacilityCode, parsePatternList } from '../lib/patterns';
 
-/** Reassigning a position: a callsign pattern, or the whole underlying facility code. */
+/** Reassigning a position: callsign patterns, or the whole underlying facility code. */
 export interface Assignment {
   kind: 'pattern' | 'include';
-  value: string;
+  /** Patterns to move (a position like TOR_APP needs both TOR_APP and TOR_*_APP), or one facility code. */
+  values: string[];
   facility: string;
   /** Name for the facility when it's created. */
   name: string;
@@ -555,6 +555,7 @@ function Positions({ report, codeInfo, onAssign }: { report: QuarterReport; code
                 </td>
               </tr>
               {f.positions.map((p) => {
+                const key = `${f.code}|${p.position}`;
                 const tone =
                   p.resolution.source === 'unknown'
                     ? 'color-fg-danger'
@@ -562,9 +563,12 @@ function Positions({ report, codeInfo, onAssign }: { report: QuarterReport; code
                       ? 'color-fg-attention'
                       : 'color-fg-muted';
                 return (
-                  <Fragment key={p.callsign}>
+                  <Fragment key={p.position}>
                     <tr>
-                      <td className="text-mono f6">{p.callsign}</td>
+                      <td className="f6 no-wrap" title={p.callsigns.join(', ')}>
+                        <span className="text-mono">{p.position}</span>
+                        {p.callsigns.length > 1 && <span className="color-fg-muted"> · {p.callsigns.length} callsigns</span>}
+                      </td>
                       <td className="no-wrap">{p.level}</td>
                       <td className="num">{p.sessions}</td>
                       <td className="num" title={`${fmt.hm(p.hours)} h:mm`}>
@@ -575,17 +579,19 @@ function Positions({ report, codeInfo, onAssign }: { report: QuarterReport; code
                         {p.positionRules.length > 0 && (
                           <div className="color-fg-muted">
                             {p.positionRules.join(', ')}
-                            {!p.countsTowardFacility && ' · not counted toward facility currency'}
+                            {p.currencyHours <= 1e-9
+                              ? ' · not counted toward facility currency'
+                              : p.currencyHours < p.hours - 1e-9 && ` · ${fmt.hours(p.currencyHours)} h counted toward facility currency`}
                           </div>
                         )}
                       </td>
                       <td className="text-right">
-                        <button className="btn-link f6" onClick={() => setEditing(editing === p.callsign ? null : p.callsign)}>
+                        <button className="btn-link f6" onClick={() => setEditing(editing === key ? null : key)}>
                           Reassign
                         </button>
                       </td>
                     </tr>
-                    {editing === p.callsign && (
+                    {editing === key && (
                       <tr className="editor">
                         <td colSpan={6}>
                           <AssignForm
@@ -626,12 +632,11 @@ function AssignForm({
   // sense when it came from VATSpy rather than from one of the user's own callsign patterns.
   const r = position.resolution;
   const underlying = r.groupedFrom ?? (r.source === 'custom' || r.source === 'unknown' ? null : r.facility);
-  // Shortest prefix first (DCA_*), then longer ones (DCA_N_*), then the exact callsign, then the whole facility.
+  const { prefix, suffix } = position;
+  // Every position with the prefix, then this position whatever its middle segments, then the whole facility.
   const options: { value: string; label: string }[] = [
-    ...prefixCandidates(position.segments)
-      .reverse()
-      .map((c) => ({ value: `pattern:${c}_*`, label: `${c}_*` })),
-    { value: `pattern:${position.callsign}`, label: position.callsign },
+    { value: `pattern:${prefix}_*`, label: `${prefix}_* (every ${prefix} position)` },
+    { value: `pattern:${prefix}_${suffix}|${prefix}_*_${suffix}`, label: `${position.position} (any ${prefix} … ${suffix})` },
     ...(underlying ? [{ value: `include:${underlying}`, label: `all of ${underlying}` }] : []),
   ];
   const [choice, setChoice] = useState(options[0].value);
@@ -643,7 +648,7 @@ function AssignForm({
   const info = code ? codeInfo(code) : null;
   const split = choice.indexOf(':');
   const kind = choice.slice(0, split) as Assignment['kind'];
-  const value = choice.slice(split + 1);
+  const values = choice.slice(split + 1).split('|');
 
   return (
     <>
@@ -652,8 +657,8 @@ function AssignForm({
         onSubmit={(e) => {
           e.preventDefault();
           if (!isValidFacilityCode(code)) return setProblem(CODE_HELP);
-          if (kind === 'include' && value === code) return setProblem(`${value} is already that facility.`);
-          onSave({ kind, value, facility: code, name: name.trim() });
+          if (kind === 'include' && values[0] === code) return setProblem(`${code} is already that facility.`);
+          onSave({ kind, values, facility: code, name: name.trim() });
         }}
       >
         <span>Assign</span>
@@ -729,8 +734,11 @@ function Excluded({ report }: { report: QuarterReport }) {
             </thead>
             <tbody>
               {report.excluded.map((e) => (
-                <tr key={e.callsign}>
-                  <td className="text-mono f6">{e.callsign}</td>
+                <tr key={e.position}>
+                  <td className="f6 no-wrap" title={e.callsigns.join(', ')}>
+                    <span className="text-mono">{e.position}</span>
+                    {e.callsigns.length > 1 && <span className="color-fg-muted"> · {e.callsigns.length} callsigns</span>}
+                  </td>
                   <td className="color-fg-muted">{e.reason}</td>
                   <td className="num">{e.sessions}</td>
                   <td className="num">{fmt.hours(e.hours)}</td>
